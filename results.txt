@@ -1,0 +1,52 @@
+25/1/2024
+[+] Received 4128 bytes in 434.023s (10 bytes / s)
+
+25/1/2024
+[+] Received 210 bytes in 21.111s
+
+25/1/2024 [SF6 at 500 bandwidth]
+[+] Received 4128 bytes in 57.088s (70bps SNR 10-11 - very far from expected 20Kbps)
+
+(There is a guy who achieved 46Kb file over 26.3s that's around 1.7 Kbps)
+
+-- could baudrate be throttling our work? it did!
+26/1/2024
+
+AT+TEST=RFCFG,868,SF7,500,12,15,14,ON,OFF,OFF
+-- increased chunk size, better receiver logic (previously it would wait to recv line by line, now it just reads whole buffer)
+-- using baudrate of 115200
+[+] Received 210 bytes in 0.002s
+
+-- wow!
+
+let's try with SF6
+
+[+] Received 4128 bytes in 33.130s ???? how!
+
+-- turns out its my serial controller sleeps slowing it down, here is an improved version, we wanna get to 1Kbps
+[+] Received 4128 bytes in 7.937s (520bps)
+
+a bit more tinkering with sleep values, chunk sizes and delimiters
+[+] Received 4128 bytes in 2.735s --- boom! (1509 bps or 1.5kbps!)
+
+
+[+] Received 39900 bytes in 40.217s (992 bps - raised baudrate to 230400 and had to lower chunksize?)
+
+[+] Received 4128 bytes in 2.703s (1500 bps)
+
+-- seems like there is some overhead for sending??
+-- the 0.002s above was kind of a fluke, consistent, reliable sending will have to wait for confirmation
+-- and send packets synchronously
+[+] Received 210 bytes in 0.107s
+
+-- the added wait for confirmation improves reliability and allows us to increase chunk size to 200!
+[+] Received 210 bytes in 0.051s
+[+] Received 4128 bytes in 3.138s (1376 bytes/s!)
+
+-- SF6 with 230400 baudrate
+[+] Received 4128 bytes in 2.482s (1.7KB/s) --- this is precisely like the guy up there who achieved 1.7kbps
+
+-- lora announced data rate for SF8/500KHz is 12500 bps or 1562.5 bytes/s, so we doing good.
+-- there is an announced data rate of 21900 bps or around 2737.5 bytes/s for SF7/500KHz, quite unsure how to achieve that (perhaps the serial overhead throttling it for me?)
+
+[+] Received 39900 bytes (133x100 pixels) in 24.834s (1608.8 bytes/s) -- can improve image size via compression (currently we transfer raw pixels)
