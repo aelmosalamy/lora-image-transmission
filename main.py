@@ -1,13 +1,13 @@
-import time
-import struct
 import tkinter as tk
-from serial import Serial
-from serial.tools import list_ports
 from io import BytesIO
 from datetime import datetime
-from threading import Thread
 from tkinter import filedialog
 from PIL import Image, ImageTk
+from serial import Serial
+from serial.tools import list_ports
+import threading
+import struct
+import time
 
 ENABLE_LOG = False
 PROTOCOL_HEADER_SIZE = 12
@@ -137,7 +137,7 @@ class App_TX:
         self.choose_button.pack(side="left", padx=10, pady=10)
 
         self.connect_button = tk.Button(
-            self.controls_frame, text="Connect Serial", command=self.connect_serial
+            self.controls_frame, text="Connect Serial", command=lambda: threading.Thread(target=self.connect_serial).start()
         )
         self.connect_button.pack(side="left", padx=10, pady=10)
 

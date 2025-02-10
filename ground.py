@@ -1,10 +1,12 @@
 import serial
+import argparse
 import time
 import struct
 import re
 from PIL import Image
 
 ENABLE_LOG = False
+PROTOCOL_HEADER_SIZE = 12
 
 # AT+TEST=RFCFG,868,SF6,250,12,15,14,ON,OFF,OFF
 # Available baud rate are 9600 14400 19200 38400 57600 76800 115200 and 230400
@@ -15,9 +17,16 @@ ground_config = f'''\
 AT+LOG={'DEBUG' if ENABLE_LOG else 'QUIET'}
 AT+UART=BR, 230400
 AT+MODE=TEST
-AT+TEST=RFCFG,868,SF6,500,12,15,14,ON,OFF,OFF
+AT+TEST=RFCFG,868,SF7,500,12,15,14,ON,OFF,OFF
 AT+TEST=RXLRPKT'''.encode()
 
+
+def args():
+    parser = argparse.ArgumentParser()
+
+
+    args = parser.parse_args()
+    
 
 def connect_ground(port="COM4"):
     buffer = b''
@@ -29,7 +38,7 @@ def connect_ground(port="COM4"):
             if ser_ground.is_open:
                 print(f"[+] Connected to {port}.")
 
-            print(f"[*] Configuring ground")
+            print("[*] Configuring ground")
             for cmd in ground_config.split(b'\n'):
                 r = ser_ground.write(cmd + b'\n')
                 time.sleep(0.3)
@@ -46,11 +55,10 @@ def connect_ground(port="COM4"):
 
                         if incoming_bytes == 0 and b:
                             start_time = time.perf_counter_ns()
-                            width, height = struct.unpack('>II', b[:8])
+                            incoming_bytes, width, height = struct.unpack('>III', b[:PROTOCOL_HEADER_SIZE])
                             print(f'[*] Detected {width}x{height} image.')
-                            incoming_bytes = width * height * 3              # 24-bit depth
                             print(f'[*] Receiving {incoming_bytes} bytes.')
-                            b = b[8:]
+                            b = b[PROTOCOL_HEADER_SIZE:]
 
                         packets_received += 1
                         buffer += b
