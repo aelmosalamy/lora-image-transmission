@@ -10,6 +10,7 @@ import threading
 import argparse
 import struct
 import time
+import os
 import re
 
 VERBOSE = ...
@@ -149,6 +150,7 @@ def launch_server(port='COM4', configure=False):
             packets_received = 0
             while incoming_bytes == 0 or len(buffer) < incoming_bytes:
                 if r := ser_ground.read_until(b'\r\n'):
+                    print('r', r)
                     if matches := re.finditer(r'RX "(\w+?)"', r.decode()):
                         b = bytes.fromhex(''.join([x.group(1) for x in matches]))
 
@@ -409,6 +411,7 @@ class DroneGUI:
 
         self.image = image
         self.tk_image = ImageTk.PhotoImage(resized_image)
+        self.label_loaded.config(text=os.path.basename(path))
         self.image_canvas.delete("all")
         self.image_canvas.create_image(
             canvas_width / 2, canvas_height / 2, image=self.tk_image, anchor="center"
