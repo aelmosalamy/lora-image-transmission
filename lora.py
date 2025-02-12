@@ -33,7 +33,9 @@ AT_RXLRPKT = 'AT+TEST=RXLRPKT\n'
 
 CHUNK_SIZE = 200
 
-RETRANSMISSION_TIMEOUT = 5
+RETRANSMISSION_TIMEOUT = 10
+
+MAX_RETRIES = 3
 
 # to be refactored
 status_text_box: tk.Text = None
@@ -159,7 +161,7 @@ def launch_server(port='COM4', configure=False):
             bytes_received = 0
             num_expected_chunks = None
             missing_chunks = set()
-            while incoming_bytes == 0 or bytes_received < incoming_bytes:
+            while incoming_bytes == 0 or bytes_received < incoming_bytes or missing_chunks:
                 # timeouts after 5s (or configured timeout)
                 if r := ser_ground.read_until(b'\r\n'):
                     matches = re.finditer(r'RX "(\w+?)"', r.decode())
@@ -213,14 +215,35 @@ def launch_server(port='COM4', configure=False):
                     if VERBOSE:
                         print(f"<<< {r}")
                 
-                # if we reach here it means we hit the read timeout, lets request missing chunks
+                # if we reach here it means we transmitter sent all and we have missing chunks AKA we
+                # hit the RETRANSMISSION_TIMEOUT and should request missing chunks
                 elif incoming_bytes:
+                    # we know we timed out, lets reset timeout to somewhat normal
+                    ser_ground.timeout = RETRANSMISSION_TIMEOUT // 2
+
                     missing_chunks = {seq for seq in range(num_expected_chunks) if seq not in chunks_received}
                     
                     print(f'[-] Timed out. Missing {len(missing_chunks)} chunk/s')
 
-                    print(f'[*] Requesting retransmission of unreceived chunks: {missing_chunks}...')
-            
+                    if missing_chunks:
+                        print(f'[*] Requesting retransmission of unreceived chunks: {missing_chunks}...')
+                    else:
+                        print('[+] Successfully recovered missing chunks. Sending confirmation...')
+
+                    request_payload = b'MISS' + struct.pack('>H' + 'H' * len(missing_chunks), len(missing_chunks), *missing_chunks)  
+                    print('[*] Request payload:', request_payload)
+
+                    ser_ground.write(f'AT+TEST=TXLRPKT, "{request_payload.hex()}"\n'.encode())
+                    # return AT TX confirmation
+                    ser_ground.read_until(b"TX DONE\r\n").decode()
+                    time.sleep(2)
+
+                    # return back to receiving
+                    ser_ground.write(f'{AT_RXLRPKT}\n'.encode())
+                    r = ser_ground.readline()
+                    if VERBOSE: 
+                        print('<<<', r.decode())
+
             # acknowledge successfully receiving all packets
 
             duration_ns = time.perf_counter_ns() - start_time
@@ -237,7 +260,7 @@ def launch_server(port='COM4', configure=False):
                 image = Image.open(f)
                 image.show()
 
-            print(f'[+] Saved {incoming_bytes} bytes to "bytes.bin"')
+            print(f'[+] Saved {incoming_bytes} bytes to "bytes.bin"\n-----\n')
 
     except FileNotFoundError:
         print(f"[-] Connection to {port} failed.")
@@ -286,22 +309,19 @@ class Drone:
             print(f"[-] Connection to {self.port} failed: {e}")
             return False
 
-    def send(self, data: bytes) -> bytes:
+    def send(self, data: bytes, recv=True) -> bytes:
         if not self.serial or not self.serial.is_open:
             print("[-] Send failed, Serial connection is not established.")
 
         self.serial.write(f'AT+TEST=TXLRPKT, "{data.hex()}"\n'.encode())
-        # return AT confirmation
-        return self.serial.read_until(b"TX DONE\r\n").decode()
+
+        # return AT confirmation, this may mess up things if you are not expecting send to recv on your behalf
+        if recv:
+            return self.serial.read_until(b"TX DONE\r\n").decode()
 
     def recv(self) -> bytes:
-        # enable rx
-        self.serial.write(f'{AT_RXLRPKT}\n'.encode())
-
-        r = self.serial.readline()
-        print('<<<', r.decode(), end='')
-
         r = self.serial.read_until(b'\r\n')
+
         matches = re.finditer(r'RX "(\w+?)"', r.decode())
         payload = bytes.fromhex(''.join([x.group(1) for x in matches]))
 
@@ -526,8 +546,7 @@ class DroneGUI:
         start_time = time.perf_counter_ns()
 
         # first chunk contains header for the entire transmission
-        for i in range(0, len(img_bytes), CHUNK_SIZE):
-            #for i in range(0, len(img_bytes), CHUNK_SIZE):
+        for i in range(0, len(img_bytes)-CHUNK_SIZE, CHUNK_SIZE):
             if self.cancel:
                 print('[!] Transmission canceled')
                 break
@@ -549,19 +568,77 @@ class DroneGUI:
                 print(r)
 
         # primary transmission is over, ensure all chunks has been received
-        print('[*] Initial transmission complete. Listening for ground updates')
-        while r := self.drone.recv():
-            print('Receiving')
-            print(r)
-
-        # complete calculate stats and reset GUI state
         duration_ns = time.perf_counter_ns() - start_time
         duration_s = duration_ns / 10**9 
+        print(f'[*] Completed first transmission in {duration_s:.3f}s ({total_bytes/duration_s:,.0f} bytes/s). Waiting for ground MISS report')
+        self.drone.serial.readall()
+
+        # increase timeout during retransmission phase
+        self.drone.serial.timeout = RETRANSMISSION_TIMEOUT // 2
+
+        num_missing = -1
+        transmitted = True
+        retries = MAX_RETRIES
+        while num_missing and retries:
+            r = b''
+            # enable rx, must be done here because we transmit after
+            if transmitted:
+                self.drone.serial.write(f'{AT_RXLRPKT}\n'.encode())
+                r += self.drone.serial.read_until(b'\r\n')
+            r += self.drone.serial.read_until(b'RX ')
+            r += self.drone.serial.readline()
+
+            if VERBOSE:
+                print('<<<', r.decode())
+
+            # why cant we do this to drain stream and get RX payload either way
+            # while not (matches := re.finditer(r'RX "(\w+?)"', self.drone.serial.readline().decode())):
+
+            matches = re.finditer(r'RX "(\w+?)"', r.decode())
+            data = bytes.fromhex(''.join([x.group(1) for x in matches]))
+
+            if not data:
+                print('.', end='', flush=True)
+                continue
+            
+            print()
+
+            if not data.startswith(b'MISS'):
+                print(r)
+                continue
+
+            header_MISS, header_COUNT, header_SEQS = data[:4], data[4:6], data[6:]
+
+            num_missing, = struct.unpack('>H', header_COUNT)
+            print(f'[*] Ground reported missing {num_missing} chunk/s')
+
+            # its possible to validate this number further for crazy values to conserve bandwidth
+            # if num_missing == 0:
+            #     break
+
+            missing_chunk_seqs = struct.unpack('>' + 'H' * num_missing, header_SEQS)
+            print(f'[*] Resending (retry: {MAX_RETRIES-retries+1}): {missing_chunk_seqs}')
+
+            for seq in missing_chunk_seqs:
+                print(f'[*] Sending {seq}')
+                chunk_index = seq * CHUNK_SIZE
+                self.drone.send(struct.pack('>H', seq) + img_bytes[chunk_index:chunk_index+CHUNK_SIZE], recv=False)
+                transmitted = True
+            retries -= 1
+
+        # reset timeout
+        self.drone.serial.timeout = 1
+
+        # report stats and reset GUI state
+        total_duration_ns = time.perf_counter_ns() - duration_ns
+        total_duration_s = duration_ns / 10**9 
+        '[+] Retransmission successful'
+
         if self.cancel:
-            print('[!] Canceled at {i:,} bytes after {duration_s:.3f}')
+            print('[!] Canceled at {i:,} bytes after {total_duration_s:.3f}')
         else:
             print(
-                    f"[+] Sent {total_bytes} bytes over {num_image_chunks} packets in {duration_s:.3f}s ({total_bytes/duration_s:,.0f} bytes/s)"
+                    f"[+] Sent {total_bytes} bytes over {num_image_chunks} packets in {total_duration_s:.3f}s ({total_bytes/duration_s:,.0f} bytes/s)"
             )
         self.cancel_button.config(state=tk.DISABLED)
 
