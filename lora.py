@@ -23,12 +23,17 @@ RF_CONFIG = {
     'baudrate': 230400,
     'frequency': 868,
     'spreading_factor': 7,
+    'bandwidth': 250,
     'power_dbm': 14
 }
 
 PROTOCOL_HEADER_SIZE = 16
 
 AT_RXLRPKT = 'AT+TEST=RXLRPKT\n'
+
+CHUNK_SIZE = 200
+
+RETRANSMISSION_TIMEOUT = 5
 
 # to be refactored
 status_text_box: tk.Text = None
@@ -40,7 +45,7 @@ def get_config_commands():
 AT+LOG={'DEBUG' if VERBOSE else 'QUIET'}
 AT+UART=BR, {RF_CONFIG['baudrate']}
 AT+MODE=TEST
-AT+TEST=RFCFG,{RF_CONFIG['frequency']},SF{RF_CONFIG['spreading_factor']},500,12,15,{RF_CONFIG['power_dbm']},ON,OFF,OFF
+AT+TEST=RFCFG,{RF_CONFIG['frequency']},SF{RF_CONFIG['spreading_factor']},{RF_CONFIG['bandwidth']},12,15,{RF_CONFIG['power_dbm']},ON,OFF,OFF
 '''
 
     return commands
@@ -88,6 +93,7 @@ def get_args():
         p.add_argument('--configure', '-c', help='apply default configuration', action='store_true')
         p.add_argument('--sf', type=spreading_factor_type, help='pick spreading factor', default=7)
         p.add_argument('--dbm', type=dbm_type, help='pick transceiver power in dBm', default=14)
+        p.add_argument('--bandwidth', '--bw', type=int, choices=(250, 500), help='pick signal bandwidth', default=250)
         p.add_argument('--verbose', '-v', help='verbose mode', action='store_true')
 
     client_parser.add_argument('--auto', action=argparse.BooleanOptionalAction, help='automatically connect upon launch', default=False)
@@ -126,14 +132,16 @@ def launch_server(port='COM4', configure=False):
 
                 ground_config = get_config_commands()
                 if VERBOSE:
-                    print('>>> ', '\n>>> '.join(ground_config.strip().split('\n')), end='\n\n')
+                    print('>>>', '\n>>> '.join(ground_config.strip().split('\n')), end='\n\n')
 
                 for cmd in ground_config.split('\n'):
                     ser_ground.write(f'{cmd}\n'.encode())
+
+                    # get AT config acknowledgement & check for errors
                     r = ser_ground.readline()
 
                     if b'ERROR' in r:
-                        print(f"[!] Configuration failed: {r.decode()}")
+                        print(f"[!] Configuration error: {r.decode()}")
                         exit(1)
                     if r:
                         print('<<<', r.decode(), end='')
@@ -147,39 +155,81 @@ def launch_server(port='COM4', configure=False):
             print('<<<', r.decode(), end='')
             print('[*] Listening...')
 
-            packets_received = 0
-            while incoming_bytes == 0 or len(buffer) < incoming_bytes:
+            chunks_received = {}
+            bytes_received = 0
+            num_expected_chunks = None
+            missing_chunks = set()
+            while incoming_bytes == 0 or bytes_received < incoming_bytes:
+                # timeouts after 5s (or configured timeout)
                 if r := ser_ground.read_until(b'\r\n'):
-                    print('r', r)
-                    if matches := re.finditer(r'RX "(\w+?)"', r.decode()):
-                        b = bytes.fromhex(''.join([x.group(1) for x in matches]))
+                    matches = re.finditer(r'RX "(\w+?)"', r.decode())
+                    chunk_bytes = bytes.fromhex(''.join([x.group(1) for x in matches]))
 
-                        if incoming_bytes == 0 and b:
-                            preamble, incoming_bytes, width, height = struct.unpack('>4sIII', b[:PROTOCOL_HEADER_SIZE])
+                    # parse start of transmission header, skipping invalid ones
+                    if incoming_bytes == 0 and chunk_bytes:
+                        preamble, incoming_bytes, width, height = struct.unpack('>4sIII', chunk_bytes[:PROTOCOL_HEADER_SIZE])
 
-                            if preamble != b'LORA':
-                                # if VERBOSE:
-                                print('Received invalid preamble, dropping packet.')
-                                incoming_bytes = 0
-                                continue
+                        # invalid preamble
+                        if preamble != b'LORA':
+                            # if VERBOSE:
+                            print('Received invalid preamble, dropping packet.')
+                            incoming_bytes = 0
+                            continue
 
-                            start_time = time.perf_counter_ns()
-                            print(preamble.decode())
-                            print(f'[*] Detected {width}x{height} image.')
-                            print(f'[*] Receiving {incoming_bytes} bytes.')
-                            b = b[PROTOCOL_HEADER_SIZE:]
+                        # valid preamble, start receiving image
+                        start_time = time.perf_counter_ns()
+                        print(preamble.decode())
+                        print(f'[*] Detected {width}x{height} image.')
+                        print(f'[*] Receiving {incoming_bytes} bytes.')
+                        chunk_bytes = chunk_bytes[PROTOCOL_HEADER_SIZE:]
+                        num_expected_chunks = -(-incoming_bytes // CHUNK_SIZE)
 
-                        packets_received += 1
-                        buffer += b
-                        if b and len(buffer) % (incoming_bytes // 5) < max(incoming_bytes / 20, 40):
-                            print(f'[*] Received {len(buffer)} bytes')
+                        # use higher timeout from now on, we will request retransmission
+                        # if this timeout gets hit, we dont use this initially because it
+                        # blocks keyboard interrupts for example.
+                        ser_ground.timeout = RETRANSMISSION_TIMEOUT
+
+                    if chunk_bytes:
+                        seq_number, chunk_bytes = *struct.unpack('>H', chunk_bytes[:2]), chunk_bytes[2:]
+
+                        # validate seq number using few heuristics
+                        # 19535 is decimal for LO - can occur on overlap with new transmission
+                        if seq_number == 19535 or seq_number < 0 or seq_number >= num_expected_chunks:
+                            print('[!] Invalid sequence number received, dropping chunk.')
+                            continue
+
+                        if seq_number in missing_chunks:
+                            print(f'[+] Received previously missing chunk {seq_number}!')
+                            
+                        # do not overwrite or double count
+                        if seq_number not in chunks_received:
+                            chunks_received[seq_number] = chunk_bytes
+                            bytes_received += 2 + len(chunk_bytes)
+
+                            if bytes_received % (incoming_bytes // 5) < max(incoming_bytes / 20, 200):
+                                print(f'[*] Received {bytes_received} bytes')
+
 
                     if VERBOSE:
                         print(f"<<< {r}")
+                
+                # if we reach here it means we hit the read timeout, lets request missing chunks
+                elif incoming_bytes:
+                    missing_chunks = {seq for seq in range(num_expected_chunks) if seq not in chunks_received}
+                    
+                    print(f'[-] Timed out. Missing {len(missing_chunks)} chunk/s')
+
+                    print(f'[*] Requesting retransmission of unreceived chunks: {missing_chunks}...')
             
+            # acknowledge successfully receiving all packets
+
             duration_ns = time.perf_counter_ns() - start_time
             duration_s = duration_ns / 10**9 
-            print(f'[*] Received {len(buffer)} bytes over {packets_received} segments in {duration_s:.3f}s ({len(buffer)/duration_s:,.0f}) bytes/s')
+
+            # assemble buffer from received chunks
+            buffer = b''.join(chunks_received.values())
+
+            print(f'[*] Received {bytes_received} bytes over {len(chunks_received)} segments in {duration_s:.3f}s ({len(buffer)/duration_s:,.0f}) bytes/s')
 
             with open('bytes.bin', 'rb+') as f:
                 f.write(buffer)
@@ -241,7 +291,21 @@ class Drone:
             print("[-] Send failed, Serial connection is not established.")
 
         self.serial.write(f'AT+TEST=TXLRPKT, "{data.hex()}"\n'.encode())
+        # return AT confirmation
         return self.serial.read_until(b"TX DONE\r\n").decode()
+
+    def recv(self) -> bytes:
+        # enable rx
+        self.serial.write(f'{AT_RXLRPKT}\n'.encode())
+
+        r = self.serial.readline()
+        print('<<<', r.decode(), end='')
+
+        r = self.serial.read_until(b'\r\n')
+        matches = re.finditer(r'RX "(\w+?)"', r.decode())
+        payload = bytes.fromhex(''.join([x.group(1) for x in matches]))
+
+        return payload
 
 
 class DroneGUI:
@@ -439,46 +503,65 @@ class DroneGUI:
         # img_bytes = self.image.convert("RGB").tobytes()
         # using ByteIO to trick pillow into saving the image in memory
         with open(self.file_path, "rb") as img_file:
+            # image bytes without sequence numbers = bytes_to_send - 2 * num_image_chunks
+            # as seen later
             img_bytes = img_file.read()
 
-        bytes_to_send = len(img_bytes)
+        num_image_chunks = -(-len(img_bytes) // CHUNK_SIZE)
+        # consider chunk headers (2 bytes for sequence number currently)
+        bytes_to_send = len(img_bytes) + 2 * num_image_chunks # bytes
 
-        transmit_buffer = struct.pack(
-            ">4sIII",
+        transmit_header = struct.pack(
+            '>4sIII',
             b'LORA',
             bytes_to_send,
             self.image.width,
             self.image.height,
         )
-        transmit_buffer += img_bytes
-
-        print(f"[*] Transmitting {len(transmit_buffer):,} bytes")
 
         # send in 200 byte chunks (max RF frame is 255)
-        chunk_size = 200
-        total_data_size = PROTOCOL_HEADER_SIZE + bytes_to_send
-        packets_to_send = -int(-total_data_size / chunk_size)
+        total_bytes = PROTOCOL_HEADER_SIZE + bytes_to_send
 
+        print(f'[*] Transmitting {total_bytes} bytes')
         start_time = time.perf_counter_ns()
 
-        for i in range(0, total_data_size, chunk_size):
+        # first chunk contains header for the entire transmission
+        for i in range(0, len(img_bytes), CHUNK_SIZE):
+            #for i in range(0, len(img_bytes), CHUNK_SIZE):
             if self.cancel:
                 print('[!] Transmission canceled')
                 break
 
-            chunk = transmit_buffer[i : i + chunk_size]
-            r = self.drone.send(struct.pack('>') + chunk)
+            chunk = b''
+            # first chunk is special
+            if i == 0:
+                chunk += transmit_header
+
+            # give each chunk a sequence number, sequence number is normalized
+            # i.e. 0, 1, 2, ... N-1 instead of 0, 200, 400, (N-1) * chunk_size
+            chunk += struct.pack('>H', int(i / CHUNK_SIZE)) + img_bytes[i : i + CHUNK_SIZE]
+
+            # fire off
+            r = self.drone.send(chunk)
+
             if VERBOSE:
-                print(f">>> {transmit_buffer[i : i + chunk_size].hex()}")
+                print(f">>> {img_bytes[i : i + CHUNK_SIZE].hex()}")
                 print(r)
 
+        # primary transmission is over, ensure all chunks has been received
+        print('[*] Initial transmission complete. Listening for ground updates')
+        while r := self.drone.recv():
+            print('Receiving')
+            print(r)
+
+        # complete calculate stats and reset GUI state
         duration_ns = time.perf_counter_ns() - start_time
         duration_s = duration_ns / 10**9 
         if self.cancel:
             print('[!] Canceled at {i:,} bytes after {duration_s:.3f}')
         else:
             print(
-                    f"[+] Sent {total_data_size} bytes over {packets_to_send} packets in {duration_s:.3f}s ({total_data_size/duration_s:,.0f}) bytes/s"
+                    f"[+] Sent {total_bytes} bytes over {num_image_chunks} packets in {duration_s:.3f}s ({total_bytes/duration_s:,.0f} bytes/s)"
             )
         self.cancel_button.config(state=tk.DISABLED)
 
@@ -491,7 +574,6 @@ def launch_client(port, configure, auto):
 if __name__ == '__main__':
     args = get_args()
     VERBOSE = args.verbose
-
     if VERBOSE:
         print('! Increased verbosity !')
         print('Running with args:', args)
@@ -499,6 +581,7 @@ if __name__ == '__main__':
     # shared config & args
     RF_CONFIG['spreading_factor'] = args.sf
     RF_CONFIG['power_dbm'] = args.dbm
+    RF_CONFIG['bandwidth'] = args.bandwidth
     port = args.port
     configure = args.configure
 
