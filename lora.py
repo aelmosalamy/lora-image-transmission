@@ -3,6 +3,7 @@ from serial.tools import list_ports
 from tkinter import filedialog
 from PIL import Image, ImageTk
 from datetime import datetime
+from random import random
 from serial import Serial
 from io import BytesIO
 import tkinter as tk
@@ -35,7 +36,7 @@ CHUNK_SIZE = 200
 
 RETRANSMISSION_TIMEOUT = 10
 
-MAX_RETRIES = 3
+MAX_RETRIES = 999
 
 # to be refactored
 status_text_box: tk.Text = None
@@ -116,6 +117,7 @@ def print(*args, **kwargs):
         status_text_box.insert(
             tk.END, f"{timestamp()}: {' '.join(str(_) for _ in args)} \n"
         )
+        status_text_box.yview_moveto(1)
 
     __builtins__.print(*args, **kwargs)
 
@@ -260,9 +262,10 @@ def launch_server(port='COM4', configure=False):
                 image = Image.open(f)
                 image.show()
 
-            print(f'[+] Saved {incoming_bytes} bytes to "bytes.bin"\n-----\n')
+            print(f'[+] Saved {incoming_bytes} bytes to "bytes.bin"\n-----\n') 
 
-    except FileNotFoundError:
+    except FileNotFoundError as e:
+        print(e)
         print(f"[-] Connection to {port} failed.")
 
 
@@ -546,7 +549,7 @@ class DroneGUI:
         start_time = time.perf_counter_ns()
 
         # first chunk contains header for the entire transmission
-        for i in range(0, len(img_bytes)-CHUNK_SIZE, CHUNK_SIZE):
+        for i in range(0, len(img_bytes), CHUNK_SIZE):
             if self.cancel:
                 print('[!] Transmission canceled')
                 break
@@ -560,8 +563,17 @@ class DroneGUI:
             # i.e. 0, 1, 2, ... N-1 instead of 0, 200, 400, (N-1) * chunk_size
             chunk += struct.pack('>H', int(i / CHUNK_SIZE)) + img_bytes[i : i + CHUNK_SIZE]
 
+            # stochastically fail packets to simulate real life
+            if i != 0 and random() < 0.3:
+                continue
+
             # fire off
             r = self.drone.send(chunk)
+            
+            # provide extra redundancy to the preamble chunks
+            if i == 0:
+                r = self.drone.send(chunk)
+                r = self.drone.send(chunk)
 
             if VERBOSE:
                 print(f">>> {img_bytes[i : i + CHUNK_SIZE].hex()}")
@@ -571,20 +583,18 @@ class DroneGUI:
         duration_ns = time.perf_counter_ns() - start_time
         duration_s = duration_ns / 10**9 
         print(f'[*] Completed first transmission in {duration_s:.3f}s ({total_bytes/duration_s:,.0f} bytes/s). Waiting for ground MISS report')
-        self.drone.serial.readall()
+       # self.drone.serial.readall()
 
         # increase timeout during retransmission phase
         self.drone.serial.timeout = RETRANSMISSION_TIMEOUT // 2
 
         num_missing = -1
-        transmitted = True
         retries = MAX_RETRIES
         while num_missing and retries:
             r = b''
             # enable rx, must be done here because we transmit after
-            if transmitted:
-                self.drone.serial.write(f'{AT_RXLRPKT}\n'.encode())
-                r += self.drone.serial.read_until(b'\r\n')
+            self.drone.serial.write(f'{AT_RXLRPKT}\n'.encode())
+            r += self.drone.serial.read_until(b'\r\n')
             r += self.drone.serial.read_until(b'RX ')
             r += self.drone.serial.readline()
 
@@ -613,17 +623,22 @@ class DroneGUI:
             print(f'[*] Ground reported missing {num_missing} chunk/s')
 
             # its possible to validate this number further for crazy values to conserve bandwidth
-            # if num_missing == 0:
-            #     break
+            if num_missing == 0:
+                break
 
             missing_chunk_seqs = struct.unpack('>' + 'H' * num_missing, header_SEQS)
+
+            #waait before re sending
+            time.sleep(2)
+
             print(f'[*] Resending (retry: {MAX_RETRIES-retries+1}): {missing_chunk_seqs}')
 
             for seq in missing_chunk_seqs:
                 print(f'[*] Sending {seq}')
                 chunk_index = seq * CHUNK_SIZE
-                self.drone.send(struct.pack('>H', seq) + img_bytes[chunk_index:chunk_index+CHUNK_SIZE], recv=False)
-                transmitted = True
+                r = self.drone.send(struct.pack('>H', seq) + img_bytes[chunk_index:chunk_index+CHUNK_SIZE])
+                #debug
+                # print(4,r)
             retries -= 1
 
         # reset timeout
