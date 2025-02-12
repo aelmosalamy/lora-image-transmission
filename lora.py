@@ -571,8 +571,8 @@ class DroneGUI:
             chunk += struct.pack('>H', int(i / CHUNK_SIZE)) + img_bytes[i : i + CHUNK_SIZE]
 
             # stochastically fail packets to simulate real life
-            if i != 0 and random() < 0.3:
-                continue
+            #if i != 0 and random() < 0.3:
+            #    continue
 
             # fire off
             r = self.drone.send(chunk)
