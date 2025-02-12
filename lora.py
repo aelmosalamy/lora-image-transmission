@@ -213,8 +213,7 @@ def launch_server(port='COM4', configure=False):
                             chunks_received[seq_number] = chunk_bytes
                             bytes_received += 2 + len(chunk_bytes)
 
-                            if bytes_received % (incoming_bytes // 5) < max(incoming_bytes / 20, 200):
-                                print(f'[*] Received {bytes_received} bytes')
+                            print(f'[*] Received {bytes_received} bytes')
 
 
                     if VERBOSE:
