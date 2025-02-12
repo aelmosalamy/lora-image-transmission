@@ -1,0 +1,83 @@
+
+t@Lenovo:/home/adham/Documents/lora-image-transmission# ./lora.py server -c -p
+/dev/ttyUSB0 --bw 500 --sf 6
+Running in server mode
+[+] Server connected to serial port (/dev/ttyUSB0)
+[*] Sending configuration
+<<< +LOG: QUIET
+<<< +UART: BR, 230400
+<<< +MODE: TEST
+<<< +TEST: RFCFG F:868000000, SF6, BW500K, TXPR:12, RXPR:15, POW:14dBm, CRC:ON,
+IQ:OFF, NET:OFF
+[+] Server configured
+<<< +TEST: RXLRPKT
+[*] Listening...
+Received invalid preamble, dropping packet.
+LORA
+[*] Detected 43x32 image.
+[*] Receiving 2969 bytes.
+[*] Received 606 bytes
+[*] Received 1212 bytes
+[*] Received 1818 bytes
+[-] Timed out. Missing 6 chunk/s
+[*] Requesting retransmission of unreceived chunks: {3, 4, 9, 11, 13, 14}...
+[*] Request payload: b'MISS\x00\x06\x00\x03\x00\x04\x00\t\x00\x0b\x00\r\x00\x0e'
+tx confirm
+[-] Timed out. Missing 6 chunk/s
+[*] Requesting retransmission of unreceived chunks: {3, 4, 9, 11, 13, 14}...
+[*] Request payload: b'MISS\x00\x06\x00\x03\x00\x04\x00\t\x00\x0b\x00\r\x00\x0e'
+tx confirm
+[+] Received previously missing chunk 3!
+[-] Timed out. Missing 5 chunk/s
+[*] Requesting retransmission of unreceived chunks: {4, 9, 11, 13, 14}...
+[*] Request payload: b'MISS\x00\x05\x00\x04\x00\t\x00\x0b\x00\r\x00\x0e'
+tx confirm
+[-] Timed out. Missing 5 chunk/s
+[*] Requesting retransmission of unreceived chunks: {4, 9, 11, 13, 14}...
+[*] Request payload: b'MISS\x00\x05\x00\x04\x00\t\x00\x0b\x00\r\x00\x0e'
+tx confirm
+[+] Received previously missing chunk 14!
+[-] Timed out. Missing 4 chunk/s
+[*] Requesting retransmission of unreceived chunks: {9, 11, 4, 13}...
+[*] Request payload: b'MISS\x00\x04\x00\t\x00\x0b\x00\x04\x00\r'
+tx confirm
+[-] Timed out. Missing 4 chunk/s
+[*] Requesting retransmission of unreceived chunks: {9, 11, 4, 13}...
+[*] Request payload: b'MISS\x00\x04\x00\t\x00\x0b\x00\x04\x00\r'
+tx confirm
+[+] Received previously missing chunk 9!
+[-] Timed out. Missing 3 chunk/s
+[*] Requesting retransmission of unreceived chunks: {11, 4, 13}...
+[*] Request payload: b'MISS\x00\x03\x00\x0b\x00\x04\x00\r'
+tx confirm
+[-] Timed out. Missing 3 chunk/s
+[*] Requesting retransmission of unreceived chunks: {11, 4, 13}...
+[*] Request payload: b'MISS\x00\x03\x00\x0b\x00\x04\x00\r'
+tx confirm
+[+] Received previously missing chunk 11!
+[*] Received 2565 bytes
+[-] Timed out. Missing 2 chunk/s
+[*] Requesting retransmission of unreceived chunks: {4, 13}...
+[*] Request payload: b'MISS\x00\x02\x00\x04\x00\r'
+tx confirm
+[-] Timed out. Missing 2 chunk/s
+[*] Requesting retransmission of unreceived chunks: {4, 13}...
+[*] Request payload: b'MISS\x00\x02\x00\x04\x00\r'
+tx confirm
+[+] Received previously missing chunk 4!
+[-] Timed out. Missing 1 chunk/s
+[*] Requesting retransmission of unreceived chunks: {13}...
+[*] Request payload: b'MISS\x00\x01\x00\r'
+tx confirm
+[-] Timed out. Missing 1 chunk/s
+[*] Requesting retransmission of unreceived chunks: {13}...
+[*] Request payload: b'MISS\x00\x01\x00\r'
+tx confirm
+[+] Received previously missing chunk 13!
+[*] Received 2969 bytes
+[-] Timed out. Missing 0 chunk/s
+[+] Successfully recovered missing chunks. Sending confirmation...
+[*] Request payload: b'MISS\x00\x00'
+tx confirm
+[+] Confirmation sent
+[*] Received 2969 bytes over 15 segments in 79.305s (37) bytes/s

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from serial.tools import list_ports
 from tkinter import filedialog
 from PIL import Image, ImageTk
@@ -30,13 +30,13 @@ RF_CONFIG = {
 
 PROTOCOL_HEADER_SIZE = 16
 
-AT_RXLRPKT = 'AT+TEST=RXLRPKT\n'
-
 CHUNK_SIZE = 200
 
 RETRANSMISSION_TIMEOUT = 10
 
-MAX_RETRIES = 999
+# magic delay based on observation to give enough time for the other transceiver
+# to switch to RX
+RX_SWITCH_DELAY = 0.5
 
 # to be refactored
 status_text_box: tk.Text = None
@@ -78,7 +78,7 @@ def dbm_type(arg):
     return dbm
 
 def com_port_type(arg):
-    if type(arg) is str and arg.startswith('COM'):
+    if type(arg) is str:
         return arg
     
     raise argparse.ArgumentTypeError("invalid COM port specified, must match COMx")
@@ -92,7 +92,8 @@ def get_args():
 
     # shared arguments
     for p in (server_parser, client_parser):
-        p.add_argument('--port', '-p', help='specify serial COM port name', type=com_port_type, required=True)
+        p.add_argument('--port', '-p', help='specify serial COM port name',
+                type=com_port_type)
         p.add_argument('--configure', '-c', help='apply default configuration', action='store_true')
         p.add_argument('--sf', type=spreading_factor_type, help='pick spreading factor', default=7)
         p.add_argument('--dbm', type=dbm_type, help='pick transceiver power in dBm', default=14)
@@ -163,7 +164,7 @@ def launch_server(port='COM4', configure=False):
             bytes_received = 0
             num_expected_chunks = None
             missing_chunks = set()
-            while incoming_bytes == 0 or bytes_received < incoming_bytes or missing_chunks:
+            while incoming_bytes == 0 or bytes_received < incoming_bytes:
                 # timeouts after 5s (or configured timeout)
                 if r := ser_ground.read_until(b'\r\n'):
                     matches = re.finditer(r'RX "(\w+?)"', r.decode())
@@ -220,12 +221,12 @@ def launch_server(port='COM4', configure=False):
                 # if we reach here it means we transmitter sent all and we have missing chunks AKA we
                 # hit the RETRANSMISSION_TIMEOUT and should request missing chunks
                 elif incoming_bytes:
-                    # we know we timed out, lets reset timeout to somewhat normal
-                    ser_ground.timeout = RETRANSMISSION_TIMEOUT // 2
-
                     missing_chunks = {seq for seq in range(num_expected_chunks) if seq not in chunks_received}
                     
                     print(f'[-] Timed out. Missing {len(missing_chunks)} chunk/s')
+
+                    time.sleep(RX_SWITCH_DELAY)
+
 
                     if missing_chunks:
                         print(f'[*] Requesting retransmission of unreceived chunks: {missing_chunks}...')
@@ -237,16 +238,19 @@ def launch_server(port='COM4', configure=False):
 
                     ser_ground.write(f'AT+TEST=TXLRPKT, "{request_payload.hex()}"\n'.encode())
                     # return AT TX confirmation
-                    ser_ground.read_until(b"TX DONE\r\n").decode()
-                    time.sleep(2)
+                    r = ser_ground.read_until(b"TX DONE\r\n").decode()
 
                     # return back to receiving
                     ser_ground.write(f'{AT_RXLRPKT}\n'.encode())
-                    r = ser_ground.readline()
-                    if VERBOSE: 
-                        print('<<<', r.decode())
 
             # acknowledge successfully receiving all packets
+            time.sleep(RX_SWITCH_DELAY)
+
+            request_payload = b'MISS' + struct.pack('>H' + 'H' * len(missing_chunks), len(missing_chunks), *missing_chunks)  
+            ser_ground.write(f'AT+TEST=TXLRPKT, "{request_payload.hex()}"\n'.encode())
+            # return AT TX confirmation
+            ser_ground.read_until(b"TX DONE\r\n").decode()
+            print('[+] Confirmation sent')
 
             duration_ns = time.perf_counter_ns() - start_time
             duration_s = duration_ns / 10**9 
@@ -256,10 +260,11 @@ def launch_server(port='COM4', configure=False):
 
             print(f'[*] Received {bytes_received} bytes over {len(chunks_received)} segments in {duration_s:.3f}s ({len(buffer)/duration_s:,.0f}) bytes/s')
 
-            with open('bytes.bin', 'rb+') as f:
+            img_display = BytesIO(buffer)
+            with open('bytes.bin', 'wb') as f:
                 f.write(buffer)
                 # load and view the image using pillow
-                image = Image.open(f)
+                image = Image.open(img_display)
                 image.show()
 
             print(f'[+] Saved {incoming_bytes} bytes to "bytes.bin"\n-----\n') 
@@ -583,7 +588,6 @@ class DroneGUI:
         duration_ns = time.perf_counter_ns() - start_time
         duration_s = duration_ns / 10**9 
         print(f'[*] Completed first transmission in {duration_s:.3f}s ({total_bytes/duration_s:,.0f} bytes/s). Waiting for ground MISS report')
-       # self.drone.serial.readall()
 
         # increase timeout during retransmission phase
         self.drone.serial.timeout = RETRANSMISSION_TIMEOUT // 2
@@ -622,14 +626,13 @@ class DroneGUI:
             num_missing, = struct.unpack('>H', header_COUNT)
             print(f'[*] Ground reported missing {num_missing} chunk/s')
 
-            # its possible to validate this number further for crazy values to conserve bandwidth
             if num_missing == 0:
                 break
 
             missing_chunk_seqs = struct.unpack('>' + 'H' * num_missing, header_SEQS)
 
-            #waait before re sending
-            time.sleep(2)
+            # wait before resending
+            time.sleep(RX_SWITCH_DELAY)
 
             print(f'[*] Resending (retry: {MAX_RETRIES-retries+1}): {missing_chunk_seqs}')
 
@@ -637,8 +640,6 @@ class DroneGUI:
                 print(f'[*] Sending {seq}')
                 chunk_index = seq * CHUNK_SIZE
                 r = self.drone.send(struct.pack('>H', seq) + img_bytes[chunk_index:chunk_index+CHUNK_SIZE])
-                #debug
-                # print(4,r)
             retries -= 1
 
         # reset timeout
