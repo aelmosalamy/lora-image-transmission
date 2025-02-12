@@ -248,11 +248,12 @@ def launch_server(port='COM4', configure=False):
             # acknowledge successfully receiving all packets
             time.sleep(RX_SWITCH_DELAY)
 
-            request_payload = b'MISS' + struct.pack('>H' + 'H' * len(missing_chunks), len(missing_chunks), *missing_chunks)  
-            ser_ground.write(f'AT+TEST=TXLRPKT, "{request_payload.hex()}"\n'.encode())
-            # return AT TX confirmation
-            ser_ground.read_until(b"TX DONE\r\n").decode()
-            print('[+] Confirmation sent')
+            for i in range(3):
+                request_payload = b'MISS' + struct.pack('>H' + 'H' * len(missing_chunks), len(missing_chunks), *missing_chunks)  
+                ser_ground.write(f'AT+TEST=TXLRPKT, "{request_payload.hex()}"\n'.encode())
+                # return AT TX confirmation
+                ser_ground.read_until(b"TX DONE\r\n").decode()
+            print('[+] Confirmation sent (3x)')
 
             duration_ns = time.perf_counter_ns() - start_time
             duration_s = duration_ns / 10**9 
@@ -595,8 +596,7 @@ class DroneGUI:
         self.drone.serial.timeout = RETRANSMISSION_TIMEOUT // 2
 
         num_missing = -1
-        retries = MAX_RETRIES
-        while num_missing and retries:
+        while num_missing:
             r = b''
             # enable rx, must be done here because we transmit after
             self.drone.serial.write(f'{AT_RXLRPKT}\n'.encode())
@@ -636,13 +636,12 @@ class DroneGUI:
             # wait before resending
             time.sleep(RX_SWITCH_DELAY)
 
-            print(f'[*] Resending (retry: {MAX_RETRIES-retries+1}): {missing_chunk_seqs}')
+            print(f'[*] Resending: {missing_chunk_seqs}')
 
             for seq in missing_chunk_seqs:
                 print(f'[*] Sending {seq}')
                 chunk_index = seq * CHUNK_SIZE
                 r = self.drone.send(struct.pack('>H', seq) + img_bytes[chunk_index:chunk_index+CHUNK_SIZE])
-            retries -= 1
 
         # reset timeout
         self.drone.serial.timeout = 1
@@ -693,4 +692,5 @@ if __name__ == '__main__':
         
         while True:
             launch_server(port, configure)
+
 
