@@ -648,7 +648,7 @@ class DroneGUI:
 
         # report stats and reset GUI state
         total_duration_ns = time.perf_counter_ns() - duration_ns
-        total_duration_s = duration_ns / 10**9 
+        total_duration_s = total_duration_ns / 10**9 
         '[+] Retransmission successful'
 
         if self.cancel:
