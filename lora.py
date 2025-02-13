@@ -257,7 +257,8 @@ def launch_server(port='COM4', configure=False):
             duration_ns = time.perf_counter_ns() - start_time
             duration_s = duration_ns / 10**9 
 
-            # assemble buffer from received chunks
+            # sort and assemble buffer from received chunks
+            chunks_received = dict(sorted(chunks_received.items()))
             buffer = b''.join(chunks_received.values())
 
             print(f'[*] Received {bytes_received} bytes over {len(chunks_received)} segments in {duration_s:.3f}s ({len(buffer)/duration_s:,.0f}) bytes/s')
