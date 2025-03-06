@@ -14,12 +14,17 @@ class GroundStation {
     this.imgElement = document.getElementById('receivedImage');
     this.progressBar = document.getElementById('progressBar');
     this.progressText = document.getElementById('progressText');
+    this.configureCheckbox = document.getElementById('configureDevice');
     
     // Constants (matching Python implementation)
     this.PROTOCOL_HEADER_SIZE = 16;
     this.CHUNK_SIZE = 200; // Match the Python client's chunk size
     this.RF_CONFIG = {
       baudRate: 230400, // Match baudrate with Python client
+      frequency: 868,   // MHz
+      spreadingFactor: 7,
+      bandwidth: 250,   // kHz
+      powerDbm: 14      // Transmit power
     };
     this.AT_RXLRPKT = "AT+TEST=RXLRPKT\n";
     this.RX_SWITCH_DELAY = 500; // ms delay for mode switching
@@ -134,6 +139,24 @@ class GroundStation {
     
     // No need to wait for response here, it will be processed in the read loop
     return true;
+  }
+  
+  // Update configuration from UI elements
+  updateConfigFromUI() {
+    // Only update if elements exist
+    const frequencyEl = document.getElementById('configFrequency');
+    const sfEl = document.getElementById('configSF');
+    const bwEl = document.getElementById('configBW');
+    const powerEl = document.getElementById('configPower');
+    const verboseEl = document.getElementById('configVerbose');
+    
+    if (frequencyEl) this.RF_CONFIG.frequency = parseInt(frequencyEl.value, 10);
+    if (sfEl) this.RF_CONFIG.spreadingFactor = parseInt(sfEl.value, 10);
+    if (bwEl) this.RF_CONFIG.bandwidth = parseInt(bwEl.value, 10);
+    if (powerEl) this.RF_CONFIG.powerDbm = parseInt(powerEl.value, 10);
+    if (verboseEl) this.VERBOSE = verboseEl.checked;
+    
+    this.log(`Configuration updated: Freq=${this.RF_CONFIG.frequency}MHz, SF=${this.RF_CONFIG.spreadingFactor}, BW=${this.RF_CONFIG.bandwidth}kHz, Power=${this.RF_CONFIG.powerDbm}dBm, Verbose=${this.VERBOSE}`, 'info');
   }
 
   // Request retransmission of missing chunks
@@ -410,6 +433,37 @@ class GroundStation {
     }
   }
 
+  // Device configuration sequence
+  async configureDevice() {
+    if (!this.writer) {
+      this.log('Cannot configure: No connection established', 'error');
+      return false;
+    }
+    
+    this.log('Starting device configuration...', 'info');
+    
+    const commands = [
+      `AT+LOG=${this.VERBOSE ? 'DEBUG' : 'QUIET'}\n`,
+      `AT+UART=BR, ${this.RF_CONFIG.baudRate}\n`,
+      `AT+MODE=TEST\n`,
+      `AT+TEST=RFCFG,${this.RF_CONFIG.frequency},SF${this.RF_CONFIG.spreadingFactor},${this.RF_CONFIG.bandwidth},12,15,${this.RF_CONFIG.powerDbm},ON,OFF,OFF\n`
+    ];
+    
+    try {
+      for (const cmd of commands) {
+        await this.sendCommand(cmd);
+        // We need to pause briefly between commands to allow the device to process
+        await this.sleep(200);
+      }
+      
+      this.log('Device configuration completed successfully', 'success');
+      return true;
+    } catch (error) {
+      this.log(`Configuration failed: ${error.message}`, 'error');
+      return false;
+    }
+  }
+
   // Main entry point
   async startGroundStation() {
     try {
@@ -421,6 +475,12 @@ class GroundStation {
       
       await this.requestPort();
       await this.connectPort();
+      
+      // Update configuration from UI and configure device if option is checked
+      this.updateConfigFromUI();
+      if (this.configureCheckbox && this.configureCheckbox.checked) {
+        await this.configureDevice();
+      }
       
       // Get button references
       const startButton = document.getElementById('startReception');
@@ -459,6 +519,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Set up button event listeners
   const startButton = document.getElementById('startReception');
   const stopButton = document.getElementById('stopReception');
+  const advancedToggle = document.getElementById('advancedToggle');
+  const advancedSettings = document.getElementById('advancedSettings');
   
   if (startButton) {
     startButton.addEventListener('click', () => {
@@ -472,5 +534,20 @@ document.addEventListener('DOMContentLoaded', () => {
       startButton.disabled = false;
       stopButton.disabled = true;
     });
+  }
+  
+  // Set up advanced settings toggle
+  if (advancedToggle && advancedSettings) {
+    advancedToggle.addEventListener('click', () => {
+      advancedSettings.style.display = 
+        advancedSettings.style.display === 'none' ? 'block' : 'none';
+      advancedToggle.textContent = 
+        advancedSettings.style.display === 'none' ? 'Show Advanced Settings' : 'Hide Advanced Settings';
+    });
+  }
+  
+  // Initialize advanced settings display
+  if (advancedSettings) {
+    advancedSettings.style.display = 'none';
   }
 });

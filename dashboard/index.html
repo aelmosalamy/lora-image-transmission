@@ -75,6 +75,42 @@
         background-color: #cccccc;
         cursor: not-allowed;
       }
+      .secondary-button {
+        background-color: #2196F3;
+      }
+      .secondary-button:hover {
+        background-color: #0b7dda;
+      }
+      .advanced-panel {
+        margin-top: 15px;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: #f5f5f5;
+      }
+      .config-options {
+        margin-top: 10px;
+      }
+      .config-params {
+        margin: 10px 0;
+        padding: 10px;
+        background-color: #fff;
+        border-radius: 4px;
+      }
+      .config-row {
+        display: flex;
+        align-items: center;
+        margin: 5px 0;
+      }
+      .config-row label {
+        width: 150px;
+        margin-right: 10px;
+      }
+      .config-row input, .config-row select {
+        padding: 5px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
       .progress-container {
         width: 100%;
         background-color: #ddd;
@@ -122,6 +158,57 @@
         <div class="controls">
           <button id="startReception">Start Reception</button>
           <button id="stopReception" disabled>Stop Reception</button>
+          <button id="advancedToggle" class="secondary-button">Show Advanced Settings</button>
+        </div>
+        
+        <div id="advancedSettings" class="advanced-panel">
+          <h3>Device Configuration</h3>
+          <div class="config-options">
+            <label>
+              <input type="checkbox" id="configureDevice" checked>
+              Auto-configure device on connect
+            </label>
+            
+            <div class="config-params">
+              <div class="config-row">
+                <label>Frequency (MHz):</label>
+                <input type="number" id="configFrequency" value="868" min="863" max="870">
+              </div>
+              
+              <div class="config-row">
+                <label>Spreading Factor:</label>
+                <select id="configSF">
+                  <option value="6">SF6</option>
+                  <option value="7" selected>SF7</option>
+                  <option value="8">SF8</option>
+                  <option value="9">SF9</option>
+                  <option value="10">SF10</option>
+                  <option value="11">SF11</option>
+                  <option value="12">SF12</option>
+                </select>
+              </div>
+              
+              <div class="config-row">
+                <label>Bandwidth (kHz):</label>
+                <select id="configBW">
+                  <option value="250" selected>250</option>
+                  <option value="500">500</option>
+                </select>
+              </div>
+              
+              <div class="config-row">
+                <label>Power (dBm):</label>
+                <input type="number" id="configPower" value="14" min="13" max="22">
+              </div>
+              
+              <div class="config-row">
+                <label>
+                  <input type="checkbox" id="configVerbose" checked>
+                  Verbose Mode
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       
