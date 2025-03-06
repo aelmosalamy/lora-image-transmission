@@ -330,25 +330,8 @@ class GroundStation {
             let dataString = textDecoder.decode(value, {stream: true});
             this.log(`Received: ${dataString.trim()}`, 'info');
             
-            // Rest of your data processing logic here...
+            // Process RX data
             if (dataString.includes('RX "')) {
-              const hexData = this.extractHexData(dataString);
-              // ... existing processing code ...
-            }
-          }
-        } catch (error) {
-          reject(error);
-        } finally {
-          resolve();
-        }
-      }).catch(error => {
-        if (error.name !== 'AbortError') {
-          this.log(`Stream error: ${error.message}`, 'error');
-        }
-      });
-      
-      // No need to create a new writer here since we already have one from connectPort()
-        new WritableStream({
           write: async (chunk) => {
             if (signal.aborted) return;
             
@@ -482,10 +465,17 @@ class GroundStation {
             } else {
               this.log('No RX data in this chunk', 'info');
             }
+              const hexData = this.extractHexData(dataString);
+              if (hexData) {
+                const chunkData = this.hexToUint8Array(hexData);
+                if (chunkData.length > 0) {
+                  // Process the chunk data...
+                  // Your existing chunk processing code here
+                }
+              }
+            }
           }
-        }),
-        { signal }
-      ).catch(error => {
+        } catch (error) {
         if (error.name !== 'AbortError') {
           this.log(`Stream error: ${error.message}`, 'error');
         }
