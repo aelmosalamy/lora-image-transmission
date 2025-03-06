@@ -310,14 +310,44 @@ class GroundStation {
     try {
       // Set up streams
       const textDecoder = new TextDecoder();
-      const textEncoder = new TextEncoder();
-    
+      
       // Clear any pending data in the buffer
       this.log('Clearing buffer before starting reception', 'info');
       await this.sendCommand('AT\n'); // Simple AT command to ensure device is responsive
       await this.sleep(500);
       
-      this.readableStreamClosed = this.port.readable.pipeTo(
+      // Create reader for receiving data
+      this.reader = this.port.readable.getReader();
+      
+      // Set up read loop
+      this.readableStreamClosed = new Promise(async (resolve, reject) => {
+        try {
+          while (true) {
+            const {value, done} = await this.reader.read();
+            if (done) break;
+            
+            // Process the received chunk
+            let dataString = textDecoder.decode(value, {stream: true});
+            this.log(`Received: ${dataString.trim()}`, 'info');
+            
+            // Rest of your data processing logic here...
+            if (dataString.includes('RX "')) {
+              const hexData = this.extractHexData(dataString);
+              // ... existing processing code ...
+            }
+          }
+        } catch (error) {
+          reject(error);
+        } finally {
+          resolve();
+        }
+      }).catch(error => {
+        if (error.name !== 'AbortError') {
+          this.log(`Stream error: ${error.message}`, 'error');
+        }
+      });
+      
+      // No need to create a new writer here since we already have one from connectPort()
         new WritableStream({
           write: async (chunk) => {
             if (signal.aborted) return;
