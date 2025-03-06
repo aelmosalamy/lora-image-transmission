@@ -421,34 +421,6 @@ class GroundStation {
           await this.requestRetransmission(missing);
         }
       }
-        try {
-          while (true) {
-            const {value, done} = await this.reader.read();
-            if (done) break;
-            
-            // Process the received chunk
-            let dataString = textDecoder.decode(value, {stream: true});
-            this.log(`Received: ${dataString.trim()}`, 'info');
-            
-            // Process RX data
-            if (dataString.includes('RX "')) {
-              const hexData = this.extractHexData(dataString);
-              if (hexData) {
-                const chunkData = this.hexToUint8Array(hexData);
-                if (chunkData.length > 0) {
-                  state = await this.processChunkData(chunkData, state);
-                }
-              }
-            }
-          }
-        } catch (error) {
-          if (error.name !== 'AbortError') {
-            this.log(`Stream error: ${error.message}`, 'error');
-          }
-          reject(error);
-          return;
-        }
-      });
       
       // Set up abort handler for existing writer
       this.writableStreamClosed = new Promise(resolve => {
@@ -475,7 +447,7 @@ class GroundStation {
   }
 
   // Device configuration sequence
-  async  configureDevice() {
+  async configureDevice() {
     try {
       if (!this.writer) {
         throw new Error('No connection established');
@@ -517,6 +489,11 @@ class GroundStation {
       if (!navigator.serial) {
         this.log('Web Serial API is not supported in this browser', 'error');
         return;
+      }
+
+      // Initialize reader if needed
+      if (!this.reader && this.port) {
+        this.reader = this.port.readable.getReader();
       }
       
       await this.requestPort();
