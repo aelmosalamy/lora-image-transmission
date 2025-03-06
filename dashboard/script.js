@@ -299,12 +299,14 @@ class GroundStation {
       }
 
       const dataView = new DataView(headerData.buffer);
+      const incomingBytes = dataView.getUint32(4, false);
       const newState = {
         ...state,
-        incomingBytes: dataView.getUint32(4, false),
+        incomingBytes,
         width: dataView.getUint32(8, false), 
         height: dataView.getUint32(12, false),
-        startTime: performance.now()
+        startTime: performance.now(),
+        numExpectedChunks: Math.ceil(incomingBytes / this.CHUNK_SIZE)
       };
 
       this.log(`Detected ${newState.width}x${newState.height} image`, 'info');
@@ -409,6 +411,45 @@ class GroundStation {
     } catch (error) {
       this.log(`Error reading serial data: ${error.message}`, 'error');
       return null;
+    }
+  }
+
+  // Find missing chunks in the received data
+  findMissingChunks(state) {
+    const missing = [];
+    for (let i = 0; i < state.numExpectedChunks; i++) {
+      if (!state.chunksReceived[i]) {
+        missing.push(i);
+      }
+    }
+    return missing;
+  }
+
+  // Assemble and display the final image
+  async assembleAndDisplayImage(state) {
+    try {
+      // Sort chunks by sequence number and concatenate
+      const sortedChunks = Object.entries(state.chunksReceived)
+        .sort(([a], [b]) => parseInt(a) - parseInt(b))
+        .map(([_, chunk]) => chunk);
+
+      const imageBuffer = new Uint8Array(state.incomingBytes);
+      let offset = 0;
+      
+      for (const chunk of sortedChunks) {
+        imageBuffer.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      // Calculate statistics
+      const duration = (performance.now() - state.startTime) / 1000;
+      const bytesPerSecond = Math.round(state.incomingBytes / duration);
+      
+      this.log(`Reception completed in ${duration.toFixed(2)}s (${bytesPerSecond} bytes/s)`, 'success');
+      this.displayImage(imageBuffer);
+      
+    } catch (error) {
+      this.log(`Error assembling image: ${error.message}`, 'error');
     }
   }
 
