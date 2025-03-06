@@ -329,9 +329,9 @@ class GroundStation {
                   this.log('Failed to convert hex to bytes', 'error');
                   return;
                 }
-            
-            // Process first chunk with header
-            if (incomingBytes === 0 && chunkData.length >= this.PROTOCOL_HEADER_SIZE) {
+                
+                // Process first chunk with header
+                if (incomingBytes === 0 && chunkData.length >= this.PROTOCOL_HEADER_SIZE) {
               const headerData = chunkData.slice(0, this.PROTOCOL_HEADER_SIZE);
               const preamble = textDecoder.decode(headerData.slice(0, 4));
               
@@ -440,6 +440,7 @@ class GroundStation {
                 this.log('Reception complete!', 'success');
                 await this.stopReception();
               }
+                }
               }
             } else {
               this.log('No RX data in this chunk', 'info');
@@ -483,10 +484,10 @@ class GroundStation {
     
     this.log('Starting device configuration...', 'info');
     
-    // Match exactly the Python command format from lora.py
+    // Exact format from Python version in lora.py
     const commands = [
       `AT+LOG=${this.VERBOSE ? 'DEBUG' : 'QUIET'}\n`,
-      `AT+UART=BR,${this.RF_CONFIG.baudRate}\n`, // Removed space after BR,
+      `AT+UART=BR, ${this.RF_CONFIG.baudRate}\n`, // Add space after BR, to match Python
       `AT+MODE=TEST\n`,
       `AT+TEST=RFCFG,${this.RF_CONFIG.frequency},SF${this.RF_CONFIG.spreadingFactor},${this.RF_CONFIG.bandwidth},12,15,${this.RF_CONFIG.powerDbm},ON,OFF,OFF\n`
     ];
