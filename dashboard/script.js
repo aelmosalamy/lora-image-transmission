@@ -408,145 +408,11 @@ class GroundStation {
             
             // Process RX data
             if (dataString.includes('RX "')) {
-          write: async (chunk) => {
-            if (signal.aborted) return;
-            
-            // Use TextDecoderStream to handle partial data
-            let dataString = textDecoder.decode(chunk, {stream: true});
-            this.log(`Received: ${dataString.trim()}`, 'info');
-            
-            // Try to identify the RX pattern in the incoming data
-            if (dataString.includes('RX "')) {
-              const hexData = this.extractHexData(dataString);
-              if (hexData) {
-                this.log(`Extracted hex: ${hexData.substring(0, 20)}...`, 'info');
-                const chunkData = this.hexToUint8Array(hexData);
-                if (!chunkData.length) {
-                  this.log('Failed to convert hex to bytes', 'error');
-                  return;
-                }
-                
-                // Process first chunk with header
-                if (incomingBytes === 0 && chunkData.length >= this.PROTOCOL_HEADER_SIZE) {
-              const headerData = chunkData.slice(0, this.PROTOCOL_HEADER_SIZE);
-              const preamble = textDecoder.decode(headerData.slice(0, 4));
-              
-              if (preamble !== 'LORA') {
-                this.log('Invalid preamble, dropping packet', 'error');
-                return;
-              }
-              
-              const dataView = new DataView(headerData.buffer);
-              incomingBytes = dataView.getUint32(4, false); // big-endian
-              width = dataView.getUint32(8, false);
-              height = dataView.getUint32(12, false);
-              
-              this.log(`Detected ${width}x${height} image`, 'success');
-              this.log(`Receiving ${incomingBytes} bytes`, 'info');
-              
-              numExpectedChunks = Math.ceil(incomingBytes / this.CHUNK_SIZE);
-              this.log(`Expecting ${numExpectedChunks} chunks`, 'info');
-              
-              // Process payload after header if any
-              const payloadAfterHeader = chunkData.slice(this.PROTOCOL_HEADER_SIZE);
-              if (payloadAfterHeader.length > 2) {
-                const seqNumberView = new DataView(payloadAfterHeader.buffer, 
-                  payloadAfterHeader.byteOffset, 2);
-                const seqNumber = seqNumberView.getUint16(0, false); // big-endian
-                const chunkPayload = payloadAfterHeader.slice(2);
-                
-                if (seqNumber >= 0 && seqNumber < numExpectedChunks) {
-                  chunksReceived[seqNumber] = chunkPayload;
-                  bytesReceived += chunkPayload.length;
-                  this.updateProgress(bytesReceived, incomingBytes);
-                }
-              }
-            } 
-            // Process regular chunk
-            else if (incomingBytes > 0 && chunkData.length > 2) {
-              const seqNumberView = new DataView(chunkData.buffer, chunkData.byteOffset, 2);
-              const seqNumber = seqNumberView.getUint16(0, false); // big-endian
-              const chunkPayload = chunkData.slice(2);
-              
-              // Validate sequence number
-              if (seqNumber >= 0 && seqNumber < numExpectedChunks) {
-                if (!chunksReceived[seqNumber]) {
-                  chunksReceived[seqNumber] = chunkPayload;
-                  bytesReceived += chunkPayload.length;
-                  this.log(`Received chunk ${seqNumber}, total bytes: ${bytesReceived}`, 'info');
-                  this.updateProgress(bytesReceived, incomingBytes);
-                }
-              }
-            }
-            
-            // Check if we need to request missing chunks
-            if (incomingBytes > 0 && Object.keys(chunksReceived).length > 0) {
-              // Every 3 seconds or so, check for missing chunks
-              const elapsed = performance.now() - startTime;
-              if (elapsed > this.RETRANSMISSION_TIMEOUT && bytesReceived < incomingBytes) {
-                // Find missing chunks
-                const missingChunks = [];
-                for (let i = 0; i < numExpectedChunks; i++) {
-                  if (!chunksReceived[i]) {
-                    missingChunks.push(i);
-                  }
-                }
-                
-                if (missingChunks.length > 0) {
-                  await this.requestRetransmission(missingChunks);
-                }
-              }
-              
-              // If we've received all chunks, reassemble and display
-              if (Object.keys(chunksReceived).length === numExpectedChunks || 
-                 bytesReceived >= incomingBytes) {
-                this.log('All chunks received', 'success');
-                
-                // Reassemble the image
-                const sortedChunks = Object.keys(chunksReceived)
-                  .map(Number)
-                  .sort((a, b) => a - b)
-                  .map(key => chunksReceived[key]);
-                
-                const imageBuffer = new Uint8Array(
-                  sortedChunks.reduce((acc, chunk) => {
-                    const newArray = new Uint8Array(acc.length + chunk.length);
-                    newArray.set(acc);
-                    newArray.set(chunk, acc.length);
-                    return newArray;
-                  }, new Uint8Array(0))
-                );
-                
-                const duration = (performance.now() - startTime) / 1000;
-                this.log(
-                  `Received ${bytesReceived} bytes in ${duration.toFixed(3)}s`,
-                  'success'
-                );
-                
-                // Display the image
-                this.displayImage(imageBuffer);
-                
-                // Send final confirmation (3 times)
-                await this.sleep(this.RX_SWITCH_DELAY);
-                for (let i = 0; i < 3; i++) {
-                  await this.requestRetransmission([]);
-                  await this.sleep(1000);
-                }
-                
-                this.log('Reception complete!', 'success');
-                await this.stopReception();
-              }
-                }
-              }
-            } else {
-              this.log('No RX data in this chunk', 'info');
-            }
               const hexData = this.extractHexData(dataString);
               if (hexData) {
                 const chunkData = this.hexToUint8Array(hexData);
                 if (chunkData.length > 0) {
-                  // Process the chunk data...
-                  // Your existing chunk processing code here
+                  state = await this.processChunkData(chunkData, state);
                 }
               }
             }
@@ -556,8 +422,7 @@ class GroundStation {
             this.log(`Stream error: ${error.message}`, 'error');
           }
           reject(error);
-        } finally {
-          resolve();
+          return;
         }
       });
       
