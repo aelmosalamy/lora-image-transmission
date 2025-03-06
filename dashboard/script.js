@@ -287,25 +287,101 @@ class GroundStation {
     this.log('Reception stopped', 'info');
   }
 
+  // Process received chunk data
+  async processChunkData(chunkData, state) {
+    const { incomingBytes, chunksReceived, numExpectedChunks } = state;
+    const textDecoder = new TextDecoder();
+
+    // Handle header chunk
+    if (incomingBytes === 0 && chunkData.length >= this.PROTOCOL_HEADER_SIZE) {
+      return this.processHeaderChunk(chunkData, state);
+    }
+
+    // Handle regular chunk
+    if (incomingBytes > 0 && chunkData.length > 2) {
+      return this.processDataChunk(chunkData, state);
+    }
+
+    return state;
+  }
+
+  // Process header chunk
+  processHeaderChunk(chunkData, state) {
+    const textDecoder = new TextDecoder();
+    const headerData = chunkData.slice(0, this.PROTOCOL_HEADER_SIZE);
+    const preamble = textDecoder.decode(headerData.slice(0, 4));
+
+    if (preamble !== 'LORA') {
+      this.log('Invalid preamble, dropping packet', 'error');
+      return state;
+    }
+
+    const dataView = new DataView(headerData.buffer);
+    const newState = {
+      ...state,
+      incomingBytes: dataView.getUint32(4, false),
+      width: dataView.getUint32(8, false),
+      height: dataView.getUint32(12, false),
+      numExpectedChunks: Math.ceil(dataView.getUint32(4, false) / this.CHUNK_SIZE)
+    };
+
+    this.log(`Detected ${newState.width}x${newState.height} image`, 'success');
+    this.log(`Receiving ${newState.incomingBytes} bytes`, 'info');
+    this.log(`Expecting ${newState.numExpectedChunks} chunks`, 'info');
+
+    // Process payload after header if present
+    const payloadAfterHeader = chunkData.slice(this.PROTOCOL_HEADER_SIZE);
+    if (payloadAfterHeader.length > 2) {
+      return this.processDataChunk(payloadAfterHeader, newState);
+    }
+
+    return newState;
+  }
+
+  // Process data chunk
+  processDataChunk(chunkData, state) {
+    const seqNumberView = new DataView(chunkData.buffer, chunkData.byteOffset, 2);
+    const seqNumber = seqNumberView.getUint16(0, false);
+    const chunkPayload = chunkData.slice(2);
+
+    if (seqNumber >= 0 && seqNumber < state.numExpectedChunks && !state.chunksReceived[seqNumber]) {
+      const newState = {
+        ...state,
+        chunksReceived: {
+          ...state.chunksReceived,
+          [seqNumber]: chunkPayload
+        },
+        bytesReceived: state.bytesReceived + chunkPayload.length
+      };
+
+      this.log(`Received chunk ${seqNumber}, total bytes: ${newState.bytesReceived}`, 'info');
+      this.updateProgress(newState.bytesReceived, state.incomingBytes);
+      return newState;
+    }
+
+    return state;
+  }
+
   // Main function to receive the image
   async receiveImage() {
     if (this.isReceiving) {
       this.log('Already receiving an image', 'error');
       return;
     }
-    
+
     this.isReceiving = true;
     this.abortController = new AbortController();
-    const signal = this.abortController.signal;
-    
-    let buffer = new Uint8Array();
-    let incomingBytes = 0;
-    let width = 0;
-    let height = 0;
-    let chunksReceived = {};
-    let bytesReceived = 0;
-    let numExpectedChunks = 0;
-    const startTime = performance.now();
+
+    const state = {
+      buffer: new Uint8Array(),
+      incomingBytes: 0,
+      width: 0,
+      height: 0,
+      chunksReceived: {},
+      bytesReceived: 0,
+      numExpectedChunks: 0,
+      startTime: performance.now()
+    };
     
     try {
       // Set up streams
