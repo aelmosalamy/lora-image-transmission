@@ -476,8 +476,12 @@ class GroundStation {
             }
           }
         } catch (error) {
-        if (error.name !== 'AbortError') {
-          this.log(`Stream error: ${error.message}`, 'error');
+          if (error.name !== 'AbortError') {
+            this.log(`Stream error: ${error.message}`, 'error');
+          }
+          reject(error);
+        } finally {
+          resolve();
         }
       });
       
@@ -504,8 +508,10 @@ class GroundStation {
 
   // Device configuration sequence
   async configureDevice() {
-    if (!this.writer) {
-      this.log('Cannot configure: No connection established', 'error');
+    try {
+      if (!this.writer) {
+        throw new Error('No connection established');
+      }
       return false;
     }
     
