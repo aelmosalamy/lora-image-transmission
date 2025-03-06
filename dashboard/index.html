@@ -5,23 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LoRa Ground Station</title>
     <style>
+      :root {
+        --primary-color: #4CAF50;
+        --primary-hover: #45a049;
+        --secondary-color: #2196F3;
+        --secondary-hover: #0b7dda;
+        --danger-color: #f44336;
+        --danger-hover: #e53935;
+        --border-color: #ddd;
+        --bg-color: #f9f9f9;
+        --text-color: #333;
+      }
       body {
         font-family: Arial, sans-serif;
-        max-width: 1200px;
+        max-width: 1600px;
         margin: 0 auto;
         padding: 20px;
         line-height: 1.6;
+        background-color: #f0f0f0;
       }
       .container {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 20px;
       }
+      .full-width {
+        grid-column: 1 / -1;
+      }
       .panel {
-        border: 1px solid #ddd;
+        border: 1px solid var(--border-color);
         border-radius: 8px;
         padding: 15px;
-        background-color: #f9f9f9;
+        background-color: var(--bg-color);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       }
       .controls {
         display: flex;
@@ -29,13 +45,14 @@
         align-items: center;
       }
       .log-container {
-        height: 300px;
+        height: 400px;
         overflow-y: auto;
-        background-color: #222;
+        background-color: #1a1a1a;
         color: #eee;
-        font-family: monospace;
+        font-family: 'Consolas', monospace;
         padding: 10px;
         border-radius: 4px;
+        font-size: 0.9em;
       }
       .log-info {
         color: #88f;
@@ -151,9 +168,8 @@
   </head>
   <body>
     <div class="container">
-      <h1>LoRa Ground Station</h1>
-      
-      <div class="panel">
+      <div class="panel full-width">
+        <h1>LoRa Ground Station</h1>
         <h2>Controls</h2>
         <div class="controls">
           <button id="startReception">Start Reception</button>
@@ -213,21 +229,17 @@
       </div>
       
       <div class="panel">
-        <h2>Progress</h2>
-        <div class="progress-container">
-          <div id="progressBar" class="progress-bar">0%</div>
-        </div>
-        <div id="progressText">Waiting for transmission...</div>
-      </div>
-      
-      <div class="panel">
         <h2>Received Image</h2>
         <div class="image-container">
           <img id="receivedImage" alt="Received image will appear here" />
         </div>
         <div id="downloadContainer"></div>
+        <div class="progress-container">
+          <div id="progressBar" class="progress-bar">0%</div>
+        </div>
+        <div id="progressText">Waiting for transmission...</div>
       </div>
-      
+
       <div class="panel">
         <h2>Log</h2>
         <div id="log" class="log-container"></div>
