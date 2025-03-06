@@ -507,12 +507,14 @@ class GroundStation {
   }
 
   // Device configuration sequence
-  async configureDevice() {
+  async  configureDevice() {
     try {
       if (!this.writer) {
         throw new Error('No connection established');
       }
       return false;
+    } catch(error) {
+      this.log(error.message, 'error')
     }
     
     this.log('Starting device configuration...', 'info');
