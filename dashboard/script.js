@@ -416,41 +416,10 @@ class GroundStation {
   async receiveImage() {
     if (this.isReceiving) return;
     
-    this.isReceiving = true;
-    let state = {
-      incomingBytes: 0,
-      width: 0,
-      height: 0,
-      chunksReceived: {},
-      bytesReceived: 0,
-      startTime: null
-    };
-
     try {
-      await this.sendCommand(this.AT_RXLRPKT);
+      this.isReceiving = true;
       
-      while (this.isReceiving) {
-        const data = await this.readSerialData();
-        if (!data) continue;
-
-        state = await this.processChunkData(data, state);
-        
-        // Check for missing chunks periodically
-        if (state.incomingBytes > 0 && 
-            Object.keys(state.chunksReceived).length === state.numExpectedChunks) {
-          
-          const missing = this.findMissingChunks(state);
-          if (missing.length === 0) {
-            // All chunks received!
-            this.assembleAndDisplayImage(state);
-            break;
-          }
-          
-          await this.requestRetransmission(missing);
-        }
-      }
-      
-      // Set up abort handler for existing writer
+      // Set up abort handler first
       this.writableStreamClosed = new Promise(resolve => {
         this.abortController.signal.addEventListener('abort', () => {
           if (this.writer) {
@@ -460,16 +429,49 @@ class GroundStation {
           }
         });
       });
-      
-      // After setup, add a delay before starting reception
-      await this.sleep(500);
-  
-      // Start reception
+
+      // Initialize reception state
+      let state = {
+        incomingBytes: 0,
+        width: 0,
+        height: 0,
+        chunksReceived: {},
+        bytesReceived: 0,
+        startTime: null,
+        numExpectedChunks: 0
+      };
+
+      // Start reception mode
       await this.sendCommand(this.AT_RXLRPKT);
       this.log('Listening for transmission...', 'info');
       
+      while (this.isReceiving) {
+        const data = await this.readSerialData();
+        if (!data) {
+          await this.sleep(100); // Small delay to prevent tight loop
+          continue;
+        }
+
+        state = await this.processChunkData(data, state);
+        
+        if (state.incomingBytes > 0) {
+          this.updateProgress(state.bytesReceived, state.incomingBytes);
+          
+          // Check if we have all chunks
+          if (Object.keys(state.chunksReceived).length === state.numExpectedChunks) {
+            const missing = this.findMissingChunks(state);
+            if (missing.length === 0) {
+              // All chunks received!
+              this.assembleAndDisplayImage(state);
+              break;
+            }
+            await this.requestRetransmission(missing);
+          }
+        }
+      }
     } catch (error) {
       this.log(`Reception error: ${error.message}`, 'error');
+    } finally {
       await this.stopReception();
     }
   }
