@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LoRa Ground Station</title>
     <style>
+      /* CSS Reset */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
       :root {
         --primary-color: #4CAF50;
         --primary-hover: #45a049;
@@ -20,18 +27,15 @@
         font-family: Arial, sans-serif;
         max-width: 1600px;
         margin: 0 auto;
-        padding: 15px;
+        padding: 12px;
         line-height: 1.6;
         background-color: #f0f0f0;
-        height: 100vh;
-        box-sizing: border-box;
-        overflow: hidden;
+        min-height: 100vh;
       }
       .container {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 15px;
-        height: calc(100vh - 30px);
+        gap: 12px;
       }
       .full-width {
         grid-column: 1 / -1;
@@ -49,7 +53,7 @@
         align-items: center;
       }
       .log-container {
-        height: calc(100% - 50px);
+        height: 300px;
         overflow-y: auto;
         background-color: #1a1a1a;
         color: #eee;
@@ -72,7 +76,7 @@
         justify-content: center;
         align-items: center;
         background-color: #eee;
-        height: calc(100% - 120px);
+        height: 400px;
         border-radius: 8px;
         overflow: hidden;
       }
