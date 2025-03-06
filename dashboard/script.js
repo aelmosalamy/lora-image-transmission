@@ -426,11 +426,14 @@ class GroundStation {
         }
       });
       
-      // Set up writer
-      this.writer = this.port.writable.getWriter();
+      // Set up abort handler for existing writer
       this.writableStreamClosed = new Promise(resolve => {
-        signal.addEventListener('abort', () => {
-          this.writer.close().then(resolve);
+        this.abortController.signal.addEventListener('abort', () => {
+          if (this.writer) {
+            this.writer.close().then(resolve);
+          } else {
+            resolve();
+          }
         });
       });
       
