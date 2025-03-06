@@ -487,7 +487,7 @@ class GroundStation {
     // Exact format from Python version in lora.py
     const commands = [
       `AT+LOG=${this.VERBOSE ? 'DEBUG' : 'QUIET'}\n`,
-      `AT+UART=BR, ${this.RF_CONFIG.baudRate}\n`, // Add space after BR, to match Python
+      `AT+UART=BR,${this.RF_CONFIG.baudRate}\n`,
       `AT+MODE=TEST\n`,
       `AT+TEST=RFCFG,${this.RF_CONFIG.frequency},SF${this.RF_CONFIG.spreadingFactor},${this.RF_CONFIG.bandwidth},12,15,${this.RF_CONFIG.powerDbm},ON,OFF,OFF\n`
     ];
