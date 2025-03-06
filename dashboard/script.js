@@ -480,21 +480,16 @@ class GroundStation {
             this.log(`Stream error: ${error.message}`, 'error');
           }
           reject(error);
-        }
-      }).catch(error => {
-        if (error.name !== 'AbortError') {
-          this.log(`Stream error: ${error.message}`, 'error');
+        } finally {
+          resolve();
         }
       });
       
-      // Set up abort handler for the writer
+      // Set up writer
+      this.writer = this.port.writable.getWriter();
       this.writableStreamClosed = new Promise(resolve => {
         signal.addEventListener('abort', () => {
-          if (this.writer) {
-            this.writer.close().then(resolve);
-          } else {
-            resolve();
-          }
+          this.writer.close().then(resolve);
         });
       });
       
