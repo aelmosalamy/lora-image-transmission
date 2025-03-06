@@ -193,25 +193,18 @@ class GroundStation {
   // Request retransmission of missing chunks
   async requestRetransmission(missingChunks) {
     if (missingChunks.length === 0) {
-      this.log('No missing chunks to request', 'success');
       return;
     }
-    
+
     // Switch to TX mode temporarily
-    this.log(`Requesting retransmission of ${missingChunks.length} chunks: ${missingChunks.join(', ')}`, 'info');
-    
     await this.sleep(this.RX_SWITCH_DELAY);
+
+    const missMessage = this.createMissMessage(missingChunks);
+    await this.sendCommand(`AT+TEST=TXLRPKT, "${missMessage.toString('hex')}"\n`);
     
-    const missPayload = this.createMissMessage(missingChunks);
-    const hexPayload = Array.from(missPayload)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-      
-    await this.sendCommand(`AT+TEST=TXLRPKT, "${hexPayload}"\n`);
-    
-    // Wait for TX DONE response
+    // Wait for TX confirmation
     await this.sleep(1000);
-    
+
     // Switch back to RX mode
     await this.sendCommand(this.AT_RXLRPKT);
   }
@@ -290,16 +283,45 @@ class GroundStation {
   // Process received chunk data
   async processChunkData(chunkData, state) {
     const { incomingBytes, chunksReceived, numExpectedChunks } = state;
-    const textDecoder = new TextDecoder();
-
+    
     // Handle header chunk
     if (incomingBytes === 0 && chunkData.length >= this.PROTOCOL_HEADER_SIZE) {
-      return this.processHeaderChunk(chunkData, state);
+      const headerData = chunkData.slice(0, this.PROTOCOL_HEADER_SIZE);
+      const preamble = new TextDecoder().decode(headerData.slice(0, 4));
+
+      if (preamble !== 'LORA') {
+        this.log('Invalid preamble, dropping packet', 'error');
+        return state;
+      }
+
+      const dataView = new DataView(headerData.buffer);
+      const newState = {
+        ...state,
+        incomingBytes: dataView.getUint32(4, false),
+        width: dataView.getUint32(8, false), 
+        height: dataView.getUint32(12, false),
+        startTime: performance.now()
+      };
+
+      this.log(`Detected ${newState.width}x${newState.height} image`, 'info');
+      return newState;
     }
 
-    // Handle regular chunk
+    // Handle data chunk
     if (incomingBytes > 0 && chunkData.length > 2) {
-      return this.processDataChunk(chunkData, state);
+      const seqNumber = new DataView(chunkData.buffer).getUint16(0, false);
+      const payload = chunkData.slice(2);
+
+      if (!chunksReceived[seqNumber]) {
+        return {
+          ...state,
+          chunksReceived: {
+            ...chunksReceived,
+            [seqNumber]: payload
+          },
+          bytesReceived: state.bytesReceived + payload.length
+        };
+      }
     }
 
     return state;
@@ -364,39 +386,41 @@ class GroundStation {
 
   // Main function to receive the image
   async receiveImage() {
-    if (this.isReceiving) {
-      this.log('Already receiving an image', 'error');
-      return;
-    }
-
+    if (this.isReceiving) return;
+    
     this.isReceiving = true;
-    this.abortController = new AbortController();
-
-    const state = {
-      buffer: new Uint8Array(),
+    let state = {
       incomingBytes: 0,
       width: 0,
       height: 0,
       chunksReceived: {},
       bytesReceived: 0,
-      numExpectedChunks: 0,
-      startTime: performance.now()
+      startTime: null
     };
-    
+
     try {
-      // Set up streams
-      const textDecoder = new TextDecoder();
+      await this.sendCommand(this.AT_RXLRPKT);
       
-      // Clear any pending data in the buffer
-      this.log('Clearing buffer before starting reception', 'info');
-      await this.sendCommand('AT\n'); // Simple AT command to ensure device is responsive
-      await this.sleep(500);
-      
-      // Create reader for receiving data
-      this.reader = this.port.readable.getReader();
-      
-      // Set up read loop
-      this.readableStreamClosed = new Promise(async (resolve, reject) => {
+      while (this.isReceiving) {
+        const data = await this.readSerialData();
+        if (!data) continue;
+
+        state = await this.processChunkData(data, state);
+        
+        // Check for missing chunks periodically
+        if (state.incomingBytes > 0 && 
+            Object.keys(state.chunksReceived).length === state.numExpectedChunks) {
+          
+          const missing = this.findMissingChunks(state);
+          if (missing.length === 0) {
+            // All chunks received!
+            this.assembleAndDisplayImage(state);
+            break;
+          }
+          
+          await this.requestRetransmission(missing);
+        }
+      }
         try {
           while (true) {
             const {value, done} = await this.reader.read();
