@@ -78,8 +78,12 @@ class GroundStation {
         parity: "none",
       });
       
-      // Set up writer immediately after opening port
+      // Set up both reader and writer
+      this.reader = this.port.readable.getReader();
       this.writer = this.port.writable.getWriter();
+      
+      // Set up abort controller for cleanup
+      this.abortController = new AbortController();
       
       // Add delay after opening port
       await this.sleep(1000);
@@ -515,11 +519,6 @@ class GroundStation {
         return;
       }
 
-      // Initialize reader if needed
-      if (!this.reader && this.port) {
-        this.reader = this.port.readable.getReader();
-      }
-      
       await this.requestPort();
       await this.connectPort();
       
