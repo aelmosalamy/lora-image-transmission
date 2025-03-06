@@ -480,8 +480,10 @@ class GroundStation {
             this.log(`Stream error: ${error.message}`, 'error');
           }
           reject(error);
-        } finally {
-          resolve();
+        }
+      }).catch(error => {
+        if (error.name !== 'AbortError') {
+          this.log(`Stream error: ${error.message}`, 'error');
         }
       });
       
