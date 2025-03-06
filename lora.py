@@ -252,6 +252,7 @@ def launch_server(port='COM4', configure=False):
                 ser_ground.write(f'AT+TEST=TXLRPKT, "{request_payload.hex()}"\n'.encode())
                 # return AT TX confirmation
                 ser_ground.read_until(b"TX DONE\r\n").decode()
+                time.sleep(1)
             print('[+] Confirmation sent (3x)')
 
             duration_ns = time.perf_counter_ns() - start_time
@@ -572,8 +573,8 @@ class DroneGUI:
             chunk += struct.pack('>H', int(i / CHUNK_SIZE)) + img_bytes[i : i + CHUNK_SIZE]
 
             # stochastically fail packets to simulate real life
-            #if i != 0 and random() < 0.3:
-            #    continue
+            if i != 0 and random() < 0.3:
+                continue
 
             # fire off
             r = self.drone.send(chunk)
