@@ -3,11 +3,150 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>LoRa Ground Station</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .panel {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        background-color: #f9f9f9;
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .log-container {
+        height: 300px;
+        overflow-y: auto;
+        background-color: #222;
+        color: #eee;
+        font-family: monospace;
+        padding: 10px;
+        border-radius: 4px;
+      }
+      .log-info {
+        color: #88f;
+      }
+      .log-error {
+        color: #f88;
+      }
+      .log-success {
+        color: #8f8;
+      }
+      .image-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: #eee;
+        min-height: 300px;
+        border-radius: 8px;
+      }
+      #receivedImage {
+        max-width: 100%;
+        max-height: 500px;
+        display: none;
+      }
+      button {
+        padding: 10px 15px;
+        cursor: pointer;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 16px;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+      button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+      .progress-container {
+        width: 100%;
+        background-color: #ddd;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+      .progress-bar {
+        height: 20px;
+        background-color: #4CAF50;
+        width: 0%;
+        border-radius: 4px;
+        text-align: center;
+        line-height: 20px;
+        color: white;
+      }
+      #stopReception {
+        background-color: #f44336;
+      }
+      #stopReception:hover {
+        background-color: #e53935;
+      }
+      .download-link {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 8px 15px;
+        background-color: #2196F3;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+      }
+      .download-link:hover {
+        background-color: #0b7dda;
+      }
+      h1, h2 {
+        color: #333;
+      }
+    </style>
   </head>
   <body>
-    <h1>Start Reception</h1>
-    <button id="startReception">Click here!</button>
+    <div class="container">
+      <h1>LoRa Ground Station</h1>
+      
+      <div class="panel">
+        <h2>Controls</h2>
+        <div class="controls">
+          <button id="startReception">Start Reception</button>
+          <button id="stopReception" disabled>Stop Reception</button>
+        </div>
+      </div>
+      
+      <div class="panel">
+        <h2>Progress</h2>
+        <div class="progress-container">
+          <div id="progressBar" class="progress-bar">0%</div>
+        </div>
+        <div id="progressText">Waiting for transmission...</div>
+      </div>
+      
+      <div class="panel">
+        <h2>Received Image</h2>
+        <div class="image-container">
+          <img id="receivedImage" alt="Received image will appear here" />
+        </div>
+        <div id="downloadContainer"></div>
+      </div>
+      
+      <div class="panel">
+        <h2>Log</h2>
+        <div id="log" class="log-container"></div>
+      </div>
+    </div>
+    
     <script src="script.js"></script>
   </body>
 </html>
