@@ -95,34 +95,56 @@ class GroundStation {
 
   // Extract hex data from RX messages
   extractHexData(dataString) {
-    const matches = dataString.match(/RX "([0-9A-Fa-f]+)"/g);
-    if (!matches) return '';
-    
-    return matches
-      .map(m => m.match(/RX "([0-9A-Fa-f]+)"/)[1])
-      .join('');
+    try {
+      const matches = dataString.match(/RX "([0-9A-Fa-f]+)"/g);
+      if (!matches) return '';
+      
+      const result = matches
+        .map(m => {
+          const inner = m.match(/RX "([0-9A-Fa-f]+)"/);
+          return inner && inner[1] ? inner[1] : '';
+        })
+        .filter(hex => hex)
+        .join('');
+      
+      this.log(`Found ${matches.length} RX patterns`, 'info');
+      return result;
+    } catch (error) {
+      this.log(`Error extracting hex data: ${error.message}`, 'error');
+      return '';
+    }
   }
 
-  // Create a MISS message for retransmission requests
+  // Create a MISS message for retransmission requests that matches Python version
   createMissMessage(missingChunks) {
-    // Format: MISS + number of missing chunks (2 bytes) + sequence numbers (2 bytes each)
-    const buffer = new ArrayBuffer(4 + missingChunks.length * 2);
-    const view = new DataView(buffer);
-    
-    // Set the MISS header
-    const encoder = new TextEncoder();
-    const missHeader = encoder.encode('MISS');
-    new Uint8Array(buffer, 0, 4).set(missHeader);
-    
-    // Set the number of missing chunks (2 bytes)
-    view.setUint16(4, missingChunks.length, false); // big-endian
-    
-    // Set the sequence numbers (2 bytes each)
-    missingChunks.forEach((seq, index) => {
-      view.setUint16(6 + index * 2, seq, false); // big-endian
-    });
-    
-    return new Uint8Array(buffer);
+    try {
+      // Need to match Python struct.pack('>H' + 'H' * len(missing_chunks), len(missing_chunks), *missing_chunks)
+      const totalSize = 6 + missingChunks.length * 2; // "MISS" + 2-byte count + sequence numbers
+      const buffer = new ArrayBuffer(totalSize);
+      const uint8View = new Uint8Array(buffer);
+      const dataView = new DataView(buffer);
+      
+      // Set the "MISS" header (ASCII)
+      uint8View[0] = 77; // 'M'
+      uint8View[1] = 73; // 'I'
+      uint8View[2] = 83; // 'S'
+      uint8View[3] = 83; // 'S'
+      
+      // Set the number of missing chunks (2 bytes, big-endian)
+      dataView.setUint16(4, missingChunks.length, false);
+      
+      // Set each sequence number (2 bytes each, big-endian)
+      missingChunks.forEach((seq, index) => {
+        dataView.setUint16(6 + index * 2, seq, false);
+      });
+      
+      this.log(`Created MISS message for ${missingChunks.length} chunks: ${Array.from(uint8View).slice(0, 20).map(b => b.toString(16).padStart(2, '0')).join('')}...`, 'info');
+      
+      return uint8View;
+    } catch (error) {
+      this.log(`Error creating MISS message: ${error.message}`, 'error');
+      return new Uint8Array([77, 73, 83, 83, 0, 0]); // Empty MISS message as fallback
+    }
   }
 
   // Wait for a specific delay
@@ -137,7 +159,9 @@ class GroundStation {
     await this.writer.write(new TextEncoder().encode(command));
     this.log(`Sent: ${command.trim()}`, 'info');
     
-    // No need to wait for response here, it will be processed in the read loop
+    // Wait for AT command response before continuing
+    await this.sleep(300); // Give the device time to respond
+    
     return true;
   }
   
@@ -280,20 +304,31 @@ class GroundStation {
       // Set up streams
       const textDecoder = new TextDecoder();
       const textEncoder = new TextEncoder();
+    
+      // Clear any pending data in the buffer
+      this.log('Clearing buffer before starting reception', 'info');
+      await this.sendCommand('AT\n'); // Simple AT command to ensure device is responsive
+      await this.sleep(500);
       
       this.readableStreamClosed = this.port.readable.pipeTo(
         new WritableStream({
           write: async (chunk) => {
             if (signal.aborted) return;
             
-            const dataString = textDecoder.decode(chunk);
+            // Use TextDecoderStream to handle partial data
+            let dataString = textDecoder.decode(chunk, {stream: true});
             this.log(`Received: ${dataString.trim()}`, 'info');
             
-            const hexData = this.extractHexData(dataString);
-            if (!hexData) return;
-            
-            const chunkData = this.hexToUint8Array(hexData);
-            if (!chunkData.length) return;
+            // Try to identify the RX pattern in the incoming data
+            if (dataString.includes('RX "')) {
+              const hexData = this.extractHexData(dataString);
+              if (hexData) {
+                this.log(`Extracted hex: ${hexData.substring(0, 20)}...`, 'info');
+                const chunkData = this.hexToUint8Array(hexData);
+                if (!chunkData.length) {
+                  this.log('Failed to convert hex to bytes', 'error');
+                  return;
+                }
             
             // Process first chunk with header
             if (incomingBytes === 0 && chunkData.length >= this.PROTOCOL_HEADER_SIZE) {
@@ -405,6 +440,9 @@ class GroundStation {
                 this.log('Reception complete!', 'success');
                 await this.stopReception();
               }
+              }
+            } else {
+              this.log('No RX data in this chunk', 'info');
             }
           }
         }),
@@ -423,6 +461,9 @@ class GroundStation {
         });
       });
       
+      // After setup, add a delay before starting reception
+      await this.sleep(500);
+  
       // Start reception
       await this.sendCommand(this.AT_RXLRPKT);
       this.log('Listening for transmission...', 'info');
@@ -442,9 +483,10 @@ class GroundStation {
     
     this.log('Starting device configuration...', 'info');
     
+    // Match exactly the Python command format from lora.py
     const commands = [
       `AT+LOG=${this.VERBOSE ? 'DEBUG' : 'QUIET'}\n`,
-      `AT+UART=BR, ${this.RF_CONFIG.baudRate}\n`,
+      `AT+UART=BR,${this.RF_CONFIG.baudRate}\n`, // Removed space after BR,
       `AT+MODE=TEST\n`,
       `AT+TEST=RFCFG,${this.RF_CONFIG.frequency},SF${this.RF_CONFIG.spreadingFactor},${this.RF_CONFIG.bandwidth},12,15,${this.RF_CONFIG.powerDbm},ON,OFF,OFF\n`
     ];
