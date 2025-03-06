@@ -77,6 +77,13 @@ class GroundStation {
         stopBits: 1,
         parity: "none",
       });
+      
+      // Set up writer immediately after opening port
+      this.writer = this.port.writable.getWriter();
+      
+      // Add delay after opening port
+      await this.sleep(1000);
+      
       this.log(`Connected to serial port at ${this.RF_CONFIG.baudRate} baud`, 'success');
     } catch (error) {
       this.log(`Connection error: ${error.message}`, 'error');
@@ -535,6 +542,10 @@ class GroundStation {
       if (stopButton) {
         stopButton.disabled = false;
       }
+      
+      // Clear any errors and verify connection
+      await this.sendCommand('AT\n');
+      await this.sleep(500);
       
       // Start image reception
       await this.receiveImage();
