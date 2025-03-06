@@ -384,6 +384,30 @@ class GroundStation {
     return state;
   }
 
+  // Read data from serial port
+  async readSerialData() {
+    if (!this.reader) {
+      throw new Error('Serial reader not initialized');
+    }
+
+    try {
+      const { value, done } = await this.reader.read();
+      if (done) {
+        return null;
+      }
+
+      // Extract hex data from RX messages
+      const hexData = this.extractHexData(new TextDecoder().decode(value));
+      if (hexData) {
+        return this.hexToUint8Array(hexData);
+      }
+      return null;
+    } catch (error) {
+      this.log(`Error reading serial data: ${error.message}`, 'error');
+      return null;
+    }
+  }
+
   // Main function to receive the image
   async receiveImage() {
     if (this.isReceiving) return;
