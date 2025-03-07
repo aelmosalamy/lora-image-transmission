@@ -1,6 +1,7 @@
 // LoRa Ground Station using Browser Web Serial API
 class GroundStation {
   constructor() {
+    // Serial port handling
     this.port = null;
     this.reader = null;
     this.writer = null;
@@ -8,38 +9,57 @@ class GroundStation {
     this.writableStreamClosed = null;
     this.isReceiving = false;
     this.abortController = null;
-    
+
     // Display elements
-    this.logElement = document.getElementById('log');
-    this.imgElement = document.getElementById('receivedImage');
-    this.progressBar = document.getElementById('progressBar');
-    this.progressText = document.getElementById('progressText');
-    this.configureCheckbox = document.getElementById('configureDevice');
-    
-    // Constants (matching Python implementation)
+    this.logElement = document.getElementById("log");
+    this.imgElement = document.getElementById("receivedImage");
+    this.progressBar = document.getElementById("progressBar");
+    this.progressText = document.getElementById("progressText");
+    this.configureCheckbox = document.getElementById("configureDevice");
+
+    // Constants
     this.PROTOCOL_HEADER_SIZE = 16;
-    this.CHUNK_SIZE = 200; // Match the Python client's chunk size
+    this.CHUNK_SIZE = 200;
     this.RF_CONFIG = {
-      baudRate: 230400, // Match baudrate with Python client
-      frequency: 868,   // MHz
+      baudRate: 230400,
+      frequency: 868,
       spreadingFactor: 7,
-      bandwidth: 250,   // kHz
-      powerDbm: 14      // Transmit power
+      bandwidth: 250,
+      powerDbm: 14,
     };
     this.AT_RXLRPKT = "AT+TEST=RXLRPKT\n";
-    this.RX_SWITCH_DELAY = 500; // ms delay for mode switching
-    this.RETRANSMISSION_TIMEOUT = 10000; // ms - matches Python's 10 second timeout
+    this.RX_SWITCH_DELAY = 500;
+    this.RETRANSMISSION_TIMEOUT = 10000;
     this.VERBOSE = true;
+
+    // Reception state
+    this.receptionState = {
+      incomingBytes: 0,
+      width: 0,
+      height: 0,
+      chunksReceived: new Map(),
+      bytesReceived: 0,
+      startTime: null,
+      numExpectedChunks: 0,
+    };
   }
 
-  log(message, type = 'info') {
+  log(message, type = "info") {
     const timestamp = new Date().toLocaleTimeString();
-    const prefix = type === 'error' ? '[-] ' : 
-                   type === 'success' ? '[+] ' : '[*] ';
-    console[type === 'error' ? 'error' : 'log'](`${prefix}${message}`);
+    const prefixes = {
+      error: "[-] ",
+      success: "[+] ",
+      info: "[*] ",
+    };
+    const prefix = prefixes[type] || prefixes.info;
 
+    // Log to console
+    const consoleMethod = type === "error" ? "error" : "log";
+    console[consoleMethod](`${prefix}${message}`);
+
+    // Update UI log
     if (this.logElement) {
-      const entry = document.createElement('div');
+      const entry = document.createElement("div");
       entry.className = `log-${type}`;
       entry.textContent = `${timestamp}: ${prefix}${message}`;
       this.logElement.appendChild(entry);
@@ -50,7 +70,6 @@ class GroundStation {
   updateProgress(received, total) {
     const percent = total > 0 ? Math.round((received / total) * 100) : 0;
     if (this.progressBar) {
-      this.progressBar.value = percent;
       this.progressBar.style.width = `${percent}%`;
     }
     if (this.progressText) {
@@ -59,14 +78,67 @@ class GroundStation {
   }
 
   async requestPort() {
-    try {
-      this.port = await navigator.serial.requestPort();
-      this.log('Serial port selected', 'success');
-      return this.port;
-    } catch (error) {
-      this.log(`Error selecting port: ${error.message}`, 'error');
-      throw error;
-    }
+    return new Promise((resolve, reject) => {
+      if (!navigator.serial) {
+        reject(new Error("Web Serial API is not supported in this browser"));
+        return;
+      }
+
+      // Create port selection dialog
+      const dialog = document.createElement("div");
+      dialog.className = "port-selection-dialog";
+      dialog.innerHTML = `
+                <div class="dialog-content">
+                    <h3>Select Serial Port</h3>
+                    <p>Please select the LoRa module's serial port:</p>
+                    <div class="port-list"></div>
+                    <div class="dialog-buttons">
+                        <button id="refreshPorts">Refresh</button>
+                        <button id="cancelPort">Cancel</button>
+                    </div>
+                </div>
+            `;
+      document.body.appendChild(dialog);
+
+      // Function to update port list
+      const updatePortList = async () => {
+        const portList = dialog.querySelector(".port-list");
+        portList.innerHTML = "";
+
+        try {
+          const ports = await navigator.serial.getPorts();
+          if (ports.length === 0) {
+            portList.innerHTML =
+              "<p>No ports available. Please connect a device.</p>";
+            return;
+          }
+
+          ports.forEach((port) => {
+            const button = document.createElement("button");
+            button.textContent = `Port ${port.getInfo().usbVendorId}:${
+              port.getInfo().usbProductId
+            }`;
+            button.onclick = () => {
+              document.body.removeChild(dialog);
+              resolve(port);
+            };
+            portList.appendChild(button);
+          });
+        } catch (error) {
+          portList.innerHTML = `<p>Error: ${error.message}</p>`;
+        }
+      };
+
+      // Set up event listeners
+      dialog.querySelector("#refreshPorts").onclick = updatePortList;
+      dialog.querySelector("#cancelPort").onclick = () => {
+        document.body.removeChild(dialog);
+        reject(new Error("Port selection cancelled"));
+      };
+
+      // Initial port list update
+      updatePortList();
+    });
   }
 
   async connectPort() {
@@ -77,230 +149,216 @@ class GroundStation {
         stopBits: 1,
         parity: "none",
       });
-      
-      // Set up both reader and writer
+
       this.reader = this.port.readable.getReader();
       this.writer = this.port.writable.getWriter();
-      
-      // Set up abort controller for cleanup
       this.abortController = new AbortController();
-      
-      // Add delay after opening port
+
       await this.sleep(1000);
-      
-      this.log(`Connected to serial port at ${this.RF_CONFIG.baudRate} baud`, 'success');
+      this.log(
+        `Connected to serial port at ${this.RF_CONFIG.baudRate} baud`,
+        "success"
+      );
+      this.updateConnectionStatus(true);
     } catch (error) {
-      this.log(`Connection error: ${error.message}`, 'error');
+      this.log(`Connection error: ${error.message}`, "error");
+      this.updateConnectionStatus(false);
       throw error;
     }
   }
 
-  // Convert hex string to Uint8Array
-  hexToUint8Array(hexString) {
-    if (!hexString || hexString.length % 2 !== 0) return new Uint8Array();
-    
-    return new Uint8Array(
-      hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
-    );
-  }
-
-  // Extract hex data from RX messages
-  extractHexData(dataString) {
-    try {
-      const matches = dataString.match(/RX "([0-9A-Fa-f]+)"/g);
-      if (!matches) return '';
-      
-      const result = matches
-        .map(m => {
-          const inner = m.match(/RX "([0-9A-Fa-f]+)"/);
-          return inner && inner[1] ? inner[1] : '';
-        })
-        .filter(hex => hex)
-        .join('');
-      
-      this.log(`Found ${matches.length} RX patterns`, 'info');
-      return result;
-    } catch (error) {
-      this.log(`Error extracting hex data: ${error.message}`, 'error');
-      return '';
+  updateConnectionStatus(connected) {
+    const indicator = document.querySelector(".status-indicator");
+    const statusText = document.querySelector(".status-text");
+    if (indicator && statusText) {
+      indicator.className = `status-indicator ${connected ? "connected" : ""}`;
+      statusText.textContent = connected ? "Connected" : "Disconnected";
     }
   }
 
-  // Create a MISS message for retransmission requests that matches Python version
+  hexToUint8Array(hexString) {
+    if (!hexString || hexString.length % 2 !== 0) return new Uint8Array();
+    return new Uint8Array(
+      hexString.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))
+    );
+  }
+
+  extractHexData(dataString) {
+    try {
+      const matches = dataString.match(/RX "([0-9A-Fa-f]+)"/g);
+      if (!matches) return "";
+
+      const result = matches
+        .map((m) => {
+          const inner = m.match(/RX "([0-9A-Fa-f]+)"/);
+          return inner && inner[1] ? inner[1] : "";
+        })
+        .filter((hex) => hex)
+        .join("");
+
+      this.log(`Found ${matches.length} RX patterns`, "info");
+      return result;
+    } catch (error) {
+      this.log(`Error extracting hex data: ${error.message}`, "error");
+      return "";
+    }
+  }
+
   createMissMessage(missingChunks) {
     try {
-      // Need to match Python struct.pack('>H' + 'H' * len(missing_chunks), len(missing_chunks), *missing_chunks)
-      const totalSize = 6 + missingChunks.length * 2; // "MISS" + 2-byte count + sequence numbers
+      const totalSize = 6 + missingChunks.length * 2;
       const buffer = new ArrayBuffer(totalSize);
       const uint8View = new Uint8Array(buffer);
       const dataView = new DataView(buffer);
-      
-      // Set the "MISS" header (ASCII)
+
+      // Set "MISS" header
       uint8View[0] = 77; // 'M'
       uint8View[1] = 73; // 'I'
       uint8View[2] = 83; // 'S'
       uint8View[3] = 83; // 'S'
-      
-      // Set the number of missing chunks (2 bytes, big-endian)
+
+      // Set number of missing chunks
       dataView.setUint16(4, missingChunks.length, false);
-      
-      // Set each sequence number (2 bytes each, big-endian)
+
+      // Set sequence numbers
       missingChunks.forEach((seq, index) => {
         dataView.setUint16(6 + index * 2, seq, false);
       });
-      
-      this.log(`Created MISS message for ${missingChunks.length} chunks: ${Array.from(uint8View).slice(0, 20).map(b => b.toString(16).padStart(2, '0')).join('')}...`, 'info');
-      
+
+      this.log(
+        `Created MISS message for ${missingChunks.length} chunks`,
+        "info"
+      );
       return uint8View;
     } catch (error) {
-      this.log(`Error creating MISS message: ${error.message}`, 'error');
-      return new Uint8Array([77, 73, 83, 83, 0, 0]); // Empty MISS message as fallback
+      this.log(`Error creating MISS message: ${error.message}`, "error");
+      return new Uint8Array([77, 73, 83, 83, 0, 0]);
     }
   }
 
-  // Wait for a specific delay
   async sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // Send AT command and return response
   async sendCommand(command) {
     if (!this.writer) return null;
-    
     await this.writer.write(new TextEncoder().encode(command));
-    this.log(`Sent: ${command.trim()}`, 'info');
-    
-    // Wait for AT command response before continuing
-    await this.sleep(300); // Give the device time to respond
-    
+    this.log(`Sent: ${command.trim()}`, "info");
+    await this.sleep(300);
     return true;
   }
-  
-  // Update configuration from UI elements
+
   updateConfigFromUI() {
-    // Only update if elements exist
-    const frequencyEl = document.getElementById('configFrequency');
-    const sfEl = document.getElementById('configSF');
-    const bwEl = document.getElementById('configBW');
-    const powerEl = document.getElementById('configPower');
-    const verboseEl = document.getElementById('configVerbose');
-    
+    const frequencyEl = document.getElementById("configFrequency");
+    const sfEl = document.getElementById("configSF");
+    const bwEl = document.getElementById("configBW");
+    const powerEl = document.getElementById("configPower");
+    const verboseEl = document.getElementById("configVerbose");
+
     if (frequencyEl) this.RF_CONFIG.frequency = parseInt(frequencyEl.value, 10);
     if (sfEl) this.RF_CONFIG.spreadingFactor = parseInt(sfEl.value, 10);
     if (bwEl) this.RF_CONFIG.bandwidth = parseInt(bwEl.value, 10);
     if (powerEl) this.RF_CONFIG.powerDbm = parseInt(powerEl.value, 10);
     if (verboseEl) this.VERBOSE = verboseEl.checked;
-    
-    this.log(`Configuration updated: Freq=${this.RF_CONFIG.frequency}MHz, SF=${this.RF_CONFIG.spreadingFactor}, BW=${this.RF_CONFIG.bandwidth}kHz, Power=${this.RF_CONFIG.powerDbm}dBm, Verbose=${this.VERBOSE}`, 'info');
+
+    this.log(
+      `Configuration updated: Freq=${this.RF_CONFIG.frequency}MHz, SF=${this.RF_CONFIG.spreadingFactor}, BW=${this.RF_CONFIG.bandwidth}kHz, Power=${this.RF_CONFIG.powerDbm}dBm, Verbose=${this.VERBOSE}`,
+      "info"
+    );
   }
 
-  // Request retransmission of missing chunks
   async requestRetransmission(missingChunks) {
-    if (missingChunks.length === 0) {
-      return;
-    }
+    if (missingChunks.length === 0) return;
 
-    // Switch to TX mode temporarily
     await this.sleep(this.RX_SWITCH_DELAY);
-
     const missMessage = this.createMissMessage(missingChunks);
-    await this.sendCommand(`AT+TEST=TXLRPKT, "${missMessage.toString('hex')}"\n`);
-    
-    // Wait for TX confirmation
+    await this.sendCommand(
+      `AT+TEST=TXLRPKT, "${missMessage.toString("hex")}"\n`
+    );
     await this.sleep(1000);
-
-    // Switch back to RX mode
     await this.sendCommand(this.AT_RXLRPKT);
   }
 
-  // Display the received image
   displayImage(buffer) {
     try {
-      const blob = new Blob([buffer], { type: 'image/jpeg' });
+      const blob = new Blob([buffer], { type: "image/jpeg" });
       const imageUrl = URL.createObjectURL(blob);
-      
-      // Display image if the element exists
+
       if (this.imgElement) {
         this.imgElement.src = imageUrl;
-        this.imgElement.style.display = 'block';
+        this.imgElement.style.display = "block";
       }
-      
-      this.log('Image displayed successfully', 'success');
-      
-      // Also provide a download link
+
+      this.log("Image displayed successfully", "success");
       this.saveImageToFile(buffer, "received_image.jpg");
     } catch (error) {
-      this.log(`Error displaying image: ${error.message}`, 'error');
+      this.log(`Error displaying image: ${error.message}`, "error");
     }
   }
 
-  // Save the image buffer to a file
   saveImageToFile(buffer, filename) {
-    const blob = new Blob([buffer], { type: 'image/jpeg' });
+    const blob = new Blob([buffer], { type: "image/jpeg" });
     const url = URL.createObjectURL(blob);
-    
-    const link = document.createElement('a');
+
+    const link = document.createElement("a");
     link.href = url;
     link.download = filename;
     link.textContent = `Download ${filename}`;
-    link.className = 'download-link';
-    
-    // Add the link to the page
-    const downloadContainer = document.getElementById('downloadContainer');
+    link.className = "download-link";
+
+    const downloadContainer = document.getElementById("downloadContainer");
     if (downloadContainer) {
-      downloadContainer.innerHTML = '';
+      downloadContainer.innerHTML = "";
       downloadContainer.appendChild(link);
     }
-    
-    // Auto-download
+
     link.click();
   }
 
-  // Stop the reception process
   async stopReception() {
     if (!this.isReceiving) return;
-    
+
     this.isReceiving = false;
     if (this.abortController) {
       this.abortController.abort();
     }
-    
+
     if (this.reader) {
       await this.reader.cancel();
       await this.readableStreamClosed.catch(() => {});
       this.reader = null;
     }
-    
+
     if (this.writer) {
       await this.writer.close();
       await this.writableStreamClosed.catch(() => {});
       this.writer = null;
     }
-    
+
     if (this.port && this.port.isOpen) {
       await this.port.close();
     }
-    
-    this.log('Reception stopped', 'info');
+
+    this.log("Reception stopped", "info");
+    this.updateConnectionStatus(false);
   }
 
-  // Process received chunk data
   async processChunkData(chunkData, state) {
     if (!chunkData) {
-      this.log('Received null chunk data', 'error');
+      this.log("Received null chunk data", "error");
       return state;
     }
-    
-    this.log(`Processing chunk data of length ${chunkData.length}`, 'info');
+
+    this.log(`Processing chunk data of length ${chunkData.length}`, "info");
     const { incomingBytes, chunksReceived, numExpectedChunks } = state;
-    
+
     // Handle header chunk
     if (incomingBytes === 0 && chunkData.length >= this.PROTOCOL_HEADER_SIZE) {
       const headerData = chunkData.slice(0, this.PROTOCOL_HEADER_SIZE);
       const preamble = new TextDecoder().decode(headerData.slice(0, 4));
 
-      if (preamble !== 'LORA') {
-        this.log('Invalid preamble, dropping packet', 'error');
+      if (preamble !== "LORA") {
+        this.log("Invalid preamble, dropping packet", "error");
         return state;
       }
 
@@ -310,10 +368,10 @@ class GroundStation {
       const height = dataView.getUint32(12, false);
       const numExpectedChunks = Math.ceil(incomingBytes / this.CHUNK_SIZE);
 
-      this.log(`LORA preamble detected`, 'success');
-      this.log(`Image dimensions: ${width}x${height}`, 'info');
-      this.log(`Total bytes to receive: ${incomingBytes}`, 'info');
-      this.log(`Expected chunks: ${numExpectedChunks}`, 'info');
+      this.log(`LORA preamble detected`, "success");
+      this.log(`Image dimensions: ${width}x${height}`, "info");
+      this.log(`Total bytes to receive: ${incomingBytes}`, "info");
+      this.log(`Expected chunks: ${numExpectedChunks}`, "info");
 
       const newState = {
         ...state,
@@ -321,7 +379,7 @@ class GroundStation {
         width,
         height,
         startTime: performance.now(),
-        numExpectedChunks
+        numExpectedChunks,
       };
       return newState;
     }
@@ -332,16 +390,19 @@ class GroundStation {
       const payload = chunkData.slice(2);
 
       if (!chunksReceived[seqNumber]) {
-        const newBytesReceived = state.bytesReceived + chunkData.length; // Include sequence number in count
-        this.log(`Received chunk ${seqNumber}, length ${chunkData.length}, total bytes: ${newBytesReceived}`, 'info');
-        
+        const newBytesReceived = state.bytesReceived + chunkData.length;
+        this.log(
+          `Received chunk ${seqNumber}, length ${chunkData.length}, total bytes: ${newBytesReceived}`,
+          "info"
+        );
+
         return {
           ...state,
           chunksReceived: {
             ...chunksReceived,
-            [seqNumber]: payload
+            [seqNumber]: payload,
           },
-          bytesReceived: newBytesReceived
+          bytesReceived: newBytesReceived,
         };
       }
     }
@@ -349,90 +410,28 @@ class GroundStation {
     return state;
   }
 
-  // Process header chunk
-  processHeaderChunk(chunkData, state) {
-    const textDecoder = new TextDecoder();
-    const headerData = chunkData.slice(0, this.PROTOCOL_HEADER_SIZE);
-    const preamble = textDecoder.decode(headerData.slice(0, 4));
-
-    if (preamble !== 'LORA') {
-      this.log('Invalid preamble, dropping packet', 'error');
-      return state;
-    }
-
-    const dataView = new DataView(headerData.buffer);
-    const newState = {
-      ...state,
-      incomingBytes: dataView.getUint32(4, false),
-      width: dataView.getUint32(8, false),
-      height: dataView.getUint32(12, false),
-      numExpectedChunks: Math.ceil(dataView.getUint32(4, false) / this.CHUNK_SIZE)
-    };
-
-    this.log(`Detected ${newState.width}x${newState.height} image`, 'success');
-    this.log(`Receiving ${newState.incomingBytes} bytes`, 'info');
-    this.log(`Expecting ${newState.numExpectedChunks} chunks`, 'info');
-
-    // Process payload after header if present
-    const payloadAfterHeader = chunkData.slice(this.PROTOCOL_HEADER_SIZE);
-    if (payloadAfterHeader.length > 2) {
-      return this.processDataChunk(payloadAfterHeader, newState);
-    }
-
-    return newState;
-  }
-
-  // Process data chunk
-  processDataChunk(chunkData, state) {
-    const seqNumberView = new DataView(chunkData.buffer, chunkData.byteOffset, 2);
-    const seqNumber = seqNumberView.getUint16(0, false);
-    const chunkPayload = chunkData.slice(2);
-
-    if (seqNumber >= 0 && seqNumber < state.numExpectedChunks && !state.chunksReceived[seqNumber]) {
-      const newState = {
-        ...state,
-        chunksReceived: {
-          ...state.chunksReceived,
-          [seqNumber]: chunkPayload
-        },
-        bytesReceived: state.bytesReceived + chunkPayload.length
-      };
-
-      this.log(`Received chunk ${seqNumber}, total bytes: ${newState.bytesReceived}`, 'info');
-      this.updateProgress(newState.bytesReceived, state.incomingBytes);
-      return newState;
-    }
-
-    return state;
-  }
-
-  // Read data from serial port
   async readSerialData() {
     if (!this.reader) {
-      throw new Error('Serial reader not initialized');
+      throw new Error("Serial reader not initialized");
     }
 
     try {
       const { value, done } = await this.reader.read();
-      if (done) {
-        return null;
-      }
+      if (done) return null;
 
-      // Get the raw data and split by lines
       const rawData = new TextDecoder().decode(value);
-      this.log(`Raw data received: ${rawData.trim()}`, 'info');
-      const lines = rawData.split('\r\n');
-      
-      // Look for RX lines
+      this.log(`Raw data received: ${rawData.trim()}`, "info");
+      const lines = rawData.split("\r\n");
+
       for (const line of lines) {
-        if (line.startsWith('RX ')) {
+        if (line.startsWith("RX ")) {
           const match = line.match(/RX "([0-9A-Fa-f]+)"/);
           if (match && match[1]) {
             const hexData = match[1];
-            this.log(`Found hex data: ${hexData}`, 'info');
+            this.log(`Found hex data: ${hexData}`, "info");
             const uint8Data = this.hexToUint8Array(hexData);
             if (uint8Data.length > 0) {
-              this.log(`Converted to ${uint8Data.length} bytes`, 'info');
+              this.log(`Converted to ${uint8Data.length} bytes`, "info");
               return uint8Data;
             }
           }
@@ -440,12 +439,11 @@ class GroundStation {
       }
       return null;
     } catch (error) {
-      this.log(`Error reading serial data: ${error.message}`, 'error');
+      this.log(`Error reading serial data: ${error.message}`, "error");
       return null;
     }
   }
 
-  // Find missing chunks in the received data
   findMissingChunks(state) {
     const missing = [];
     for (let i = 0; i < state.numExpectedChunks; i++) {
@@ -456,44 +454,43 @@ class GroundStation {
     return missing;
   }
 
-  // Assemble and display the final image
   async assembleAndDisplayImage(state) {
     try {
-      // Sort chunks by sequence number and concatenate
       const sortedChunks = Object.entries(state.chunksReceived)
         .sort(([a], [b]) => parseInt(a) - parseInt(b))
         .map(([_, chunk]) => chunk);
 
       const imageBuffer = new Uint8Array(state.incomingBytes);
       let offset = 0;
-      
+
       for (const chunk of sortedChunks) {
         imageBuffer.set(chunk, offset);
         offset += chunk.length;
       }
 
-      // Calculate statistics
       const duration = (performance.now() - state.startTime) / 1000;
       const bytesPerSecond = Math.round(state.incomingBytes / duration);
-      
-      this.log(`Reception completed in ${duration.toFixed(2)}s (${bytesPerSecond} bytes/s)`, 'success');
+
+      this.log(
+        `Reception completed in ${duration.toFixed(
+          2
+        )}s (${bytesPerSecond} bytes/s)`,
+        "success"
+      );
       this.displayImage(imageBuffer);
-      
     } catch (error) {
-      this.log(`Error assembling image: ${error.message}`, 'error');
+      this.log(`Error assembling image: ${error.message}`, "error");
     }
   }
 
-  // Main function to receive the image
   async receiveImage() {
     if (this.isReceiving) return;
-    
+
     try {
       this.isReceiving = true;
-      
-      // Set up abort handler first
-      this.writableStreamClosed = new Promise(resolve => {
-        this.abortController.signal.addEventListener('abort', () => {
+
+      this.writableStreamClosed = new Promise((resolve) => {
+        this.abortController.signal.addEventListener("abort", () => {
           if (this.writer) {
             this.writer.close().then(resolve);
           } else {
@@ -502,7 +499,6 @@ class GroundStation {
         });
       });
 
-      // Initialize reception state
       let state = {
         incomingBytes: 0,
         width: 0,
@@ -510,31 +506,30 @@ class GroundStation {
         chunksReceived: {},
         bytesReceived: 0,
         startTime: null,
-        numExpectedChunks: 0
+        numExpectedChunks: 0,
       };
 
-      // Start reception mode
       await this.sendCommand(this.AT_RXLRPKT);
-      this.log('Listening for transmission...', 'info');
-      
+      this.log("Listening for transmission...", "info");
+
       while (this.isReceiving) {
         const data = await this.readSerialData();
         if (!data) {
-          await this.sleep(100); // Small delay to prevent tight loop
+          await this.sleep(100);
           continue;
         }
 
         state = await this.processChunkData(data, state);
-        
+
         if (state.incomingBytes > 0) {
           this.updateProgress(state.bytesReceived, state.incomingBytes);
-          
-          // Check if we have all chunks
-          if (Object.keys(state.chunksReceived).length === state.numExpectedChunks) {
+
+          if (
+            Object.keys(state.chunksReceived).length === state.numExpectedChunks
+          ) {
             const missing = this.findMissingChunks(state);
             if (missing.length === 0) {
-              // All chunks received!
-              this.assembleAndDisplayImage(state);
+              await this.assembleAndDisplayImage(state);
               break;
             }
             await this.requestRetransmission(missing);
@@ -542,136 +537,115 @@ class GroundStation {
         }
       }
     } catch (error) {
-      this.log(`Reception error: ${error.message}`, 'error');
+      this.log(`Reception error: ${error.message}`, "error");
     } finally {
       await this.stopReception();
     }
   }
 
-  // Device configuration sequence
   async configureDevice() {
     try {
       if (!this.writer) {
-        throw new Error('No connection established');
+        throw new Error("No connection established");
       }
       return false;
-    } catch(error) {
-      this.log(error.message, 'error')
+    } catch (error) {
+      this.log(error.message, "error");
     }
-    
-    this.log('Starting device configuration...', 'info');
-    
-    // Exact format from Python version in lora.py
+
+    this.log("Starting device configuration...", "info");
+
     const commands = [
-      `AT+LOG=${this.VERBOSE ? 'DEBUG' : 'QUIET'}\n`,
+      `AT+LOG=${this.VERBOSE ? "DEBUG" : "QUIET"}\n`,
       `AT+UART=BR,${this.RF_CONFIG.baudRate}\n`,
       `AT+MODE=TEST\n`,
-      `AT+TEST=RFCFG,${this.RF_CONFIG.frequency},SF${this.RF_CONFIG.spreadingFactor},${this.RF_CONFIG.bandwidth},12,15,${this.RF_CONFIG.powerDbm},ON,OFF,OFF\n`
+      `AT+TEST=RFCFG,${this.RF_CONFIG.frequency},SF${this.RF_CONFIG.spreadingFactor},${this.RF_CONFIG.bandwidth},12,15,${this.RF_CONFIG.powerDbm},ON,OFF,OFF\n`,
     ];
-    
+
     try {
       for (const cmd of commands) {
         await this.sendCommand(cmd);
-        // We need to pause briefly between commands to allow the device to process
         await this.sleep(200);
       }
-      
-      this.log('Device configuration completed successfully', 'success');
+
+      this.log("Device configuration completed successfully", "success");
       return true;
     } catch (error) {
-      this.log(`Configuration failed: ${error.message}`, 'error');
+      this.log(`Configuration failed: ${error.message}`, "error");
       return false;
     }
   }
 
-  // Main entry point
   async startGroundStation() {
     try {
-      // First make sure Web Serial API is available
-      if (!navigator.serial) {
-        this.log('Web Serial API is not supported in this browser', 'error');
-        return;
-      }
-
-      await this.requestPort();
+      this.port = await this.requestPort();
       await this.connectPort();
-      
-      // Update configuration from UI and configure device if option is checked
+
       this.updateConfigFromUI();
       if (this.configureCheckbox && this.configureCheckbox.checked) {
         await this.configureDevice();
       }
-      
-      // Get button references
-      const startButton = document.getElementById('startReception');
-      const stopButton = document.getElementById('stopReception');
-      
-      if (startButton) {
-        startButton.disabled = true;
-      }
-      if (stopButton) {
-        stopButton.disabled = false;
-      }
-      
-      // Clear any errors and verify connection
-      await this.sendCommand('AT\n');
+
+      const startButton = document.getElementById("startReception");
+      const stopButton = document.getElementById("stopReception");
+
+      if (startButton) startButton.disabled = true;
+      if (stopButton) stopButton.disabled = false;
+
+      await this.sendCommand("AT\n");
       await this.sleep(500);
-      
-      // Start image reception
+
       await this.receiveImage();
-      
     } catch (error) {
-      this.log(`Ground station error: ${error.message}`, 'error');
-      
-      const startButton = document.getElementById('startReception');
-      const stopButton = document.getElementById('stopReception');
-      
-      if (startButton) {
-        startButton.disabled = false;
-      }
-      if (stopButton) {
-        stopButton.disabled = true;
-      }
+      this.log(`Ground station error: ${error.message}`, "error");
+
+      const startButton = document.getElementById("startReception");
+      const stopButton = document.getElementById("stopReception");
+
+      if (startButton) startButton.disabled = false;
+      if (stopButton) stopButton.disabled = true;
     }
   }
 }
 
 // Initialize when the page is loaded
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   const groundStation = new GroundStation();
-  
+
   // Set up button event listeners
-  const startButton = document.getElementById('startReception');
-  const stopButton = document.getElementById('stopReception');
-  const advancedToggle = document.getElementById('advancedToggle');
-  const advancedSettings = document.getElementById('advancedSettings');
-  
+  const startButton = document.getElementById("startReception");
+  const stopButton = document.getElementById("stopReception");
+  const advancedToggle = document.getElementById("advancedToggle");
+  const advancedSettings = document.getElementById("advancedSettings");
+
   if (startButton) {
-    startButton.addEventListener('click', () => {
+    startButton.addEventListener("click", () => {
       groundStation.startGroundStation();
     });
   }
-  
+
   if (stopButton) {
-    stopButton.addEventListener('click', () => {
+    stopButton.addEventListener("click", () => {
       groundStation.stopReception();
       startButton.disabled = false;
       stopButton.disabled = true;
     });
   }
-  
+
   // Set up advanced settings toggle
   if (advancedToggle && advancedSettings) {
-    advancedToggle.addEventListener('click', () => {
-      advancedSettings.style.display = 
-        advancedSettings.style.display === 'none' ? 'block' : 'none';
-      advancedToggle.textContent = 
-        advancedSettings.style.display === 'none' ? 'Show Advanced Settings' : 'Hide Advanced Settings';
+    advancedToggle.addEventListener("click", () => {
+      advancedSettings.style.display =
+        advancedSettings.style.display === "none" ? "block" : "none";
+      advancedToggle.textContent =
+        advancedSettings.style.display === "none"
+          ? "Show Advanced Settings"
+          : "Hide Advanced Settings";
     });
   }
-  
+
   // Initialize advanced settings display
   if (advancedSettings) {
-    advancedSettings.style.display = 'none';
+    advancedSettings.style.display = "none";
   }
 });
