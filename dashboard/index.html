@@ -1,104 +1,84 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LoRa Ground Station</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="container">
-      <header>
-        <h1>LoRa Ground Station</h1>
-        <div class="connection-status">
-          <span class="status-indicator"></span>
-          <span class="status-text">Disconnected</span>
+      <h1>LoRa Ground Station</h1>
+
+      <div class="status-container">
+        <div class="status-indicator"></div>
+        <span class="status-text">Disconnected</span>
+      </div>
+
+      <div class="progress-container">
+        <div class="progress-bar" id="progressBar"></div>
+        <div class="progress-text" id="progressText">0% (0/0 bytes)</div>
+      </div>
+
+      <div class="controls">
+        <button id="startReception">Start Reception</button>
+        <button id="stopReception" disabled>Stop Reception</button>
+        <button id="advancedToggle">Advanced Settings</button>
+      </div>
+
+      <div
+        class="advanced-settings"
+        id="advancedSettings"
+        style="display: none"
+      >
+        <div class="setting-group">
+          <label>
+            <input type="checkbox" id="configureDevice" checked />
+            Configure Device
+          </label>
         </div>
-      </header>
+        <div class="setting-group">
+          <label>
+            <input type="checkbox" id="configVerbose" />
+            Verbose Mode
+          </label>
+        </div>
+        <div class="setting-group">
+          <label>Frequency (MHz):</label>
+          <input
+            type="number"
+            id="configFrequency"
+            value="868"
+            min="433"
+            max="928"
+          />
+        </div>
+        <div class="setting-group">
+          <label>Spreading Factor:</label>
+          <input type="number" id="configSF" value="7" min="6" max="12" />
+        </div>
+        <div class="setting-group">
+          <label>Bandwidth (kHz):</label>
+          <input type="number" id="configBW" value="250" min="125" max="500" />
+        </div>
+        <div class="setting-group">
+          <label>Power (dBm):</label>
+          <input type="number" id="configPower" value="14" min="0" max="20" />
+        </div>
+      </div>
 
-      <main>
-        <section class="controls">
-          <div class="button-group">
-            <button id="startReception" class="btn primary">
-              Start Reception
-            </button>
-            <button id="stopReception" class="btn danger" disabled>
-              Stop Reception
-            </button>
-          </div>
-          <div class="config-toggle">
-            <button id="advancedToggle" class="btn secondary">
-              Show Advanced Settings
-            </button>
-          </div>
-        </section>
-
-        <section id="advancedSettings" class="advanced-settings hidden">
-          <h2>Advanced Configuration</h2>
-          <div class="config-grid">
-            <div class="config-item">
-              <label for="configFrequency">Frequency (MHz)</label>
-              <input
-                type="number"
-                id="configFrequency"
-                value="868"
-                min="433"
-                max="915"
-              />
-            </div>
-            <div class="config-item">
-              <label for="configSF">Spreading Factor</label>
-              <input type="number" id="configSF" value="7" min="6" max="14" />
-            </div>
-            <div class="config-item">
-              <label for="configBW">Bandwidth (kHz)</label>
-              <select id="configBW">
-                <option value="250">250</option>
-                <option value="500">500</option>
-              </select>
-            </div>
-            <div class="config-item">
-              <label for="configPower">Power (dBm)</label>
-              <input
-                type="number"
-                id="configPower"
-                value="14"
-                min="13"
-                max="22"
-              />
-            </div>
-            <div class="config-item">
-              <label for="configVerbose">Verbose Mode</label>
-              <input type="checkbox" id="configVerbose" checked />
-            </div>
-            <div class="config-item">
-              <label for="configureDevice">Configure Device</label>
-              <input type="checkbox" id="configureDevice" checked />
-            </div>
-          </div>
-        </section>
-
-        <section class="progress-section">
-          <div class="progress-container">
-            <div class="progress-bar">
-              <div id="progressBar" class="progress-fill"></div>
-            </div>
-            <div id="progressText" class="progress-text">0% (0/0 bytes)</div>
-          </div>
-        </section>
-
-        <section class="display-section">
-          <div class="image-container">
-            <img id="receivedImage" alt="Received image will appear here" />
-          </div>
-          <div id="downloadContainer" class="download-container"></div>
-        </section>
-
-        <section class="log-section">
+      <div class="content-grid">
+        <div class="log-container">
           <h2>Log</h2>
-          <div id="log" class="log-container"></div>
-        </section>
-      </main>
+          <div id="log" class="log"></div>
+        </div>
+
+        <div class="image-container">
+          <h2>Received Image</h2>
+          <img id="receivedImage" style="display: none" />
+          <div id="downloadContainer"></div>
+        </div>
+      </div>
     </div>
     <script src="script.js"></script>
   </body>
