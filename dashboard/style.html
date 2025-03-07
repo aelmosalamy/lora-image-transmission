@@ -182,6 +182,62 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script>
+        class DroneController {
+            constructor() {
+                this.portSelect = document.getElementById('portSelect');
+                this.refreshButton = document.getElementById('refreshPorts');
+                this.connectButton = document.getElementById('connect');
+                this.statusIndicator = document.querySelector('.status-indicator');
+                
+                this.refreshButton.addEventListener('click', () => this.refreshPorts());
+                this.init();
+            }
+
+            async init() {
+                if (!navigator.serial) {
+                    console.error('Web Serial API not supported!');
+                    this.refreshButton.disabled = true;
+                    this.connectButton.disabled = true;
+                    return;
+                }
+                await this.refreshPorts();
+            }
+
+            async refreshPorts() {
+                // Clear existing options
+                while (this.portSelect.firstChild) {
+                    this.portSelect.removeChild(this.portSelect.firstChild);
+                }
+
+                // Add default option
+                const defaultOption = document.createElement('option');
+                defaultOption.textContent = 'Select Port';
+                defaultOption.value = '';
+                this.portSelect.appendChild(defaultOption);
+
+                // Get ports and add them to select
+                try {
+                    const ports = await navigator.serial.getPorts();
+                    for (const port of ports) {
+                        const info = port.getInfo();
+                        const option = document.createElement('option');
+                        option.value = info.usbVendorId ? 
+                            `${info.usbVendorId}:${info.usbProductId}` : 
+                            'unknown';
+                        option.textContent = `${option.value} (${info.usbVendorId ? 'USB' : 'Serial'})`;
+                        this.portSelect.appendChild(option);
+                    }
+                } catch (error) {
+                    console.error('Error listing ports:', error);
+                }
+            }
+        }
+
+        // Initialize controller when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            const controller = new DroneController();
+        });
+    </script>
 </body>
 </html>
