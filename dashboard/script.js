@@ -286,6 +286,12 @@ class GroundStation {
 
   // Process received chunk data
   async processChunkData(chunkData, state) {
+    if (!chunkData) {
+      this.log('Received null chunk data', 'error');
+      return state;
+    }
+    
+    this.log(`Processing chunk data of length ${chunkData.length}`, 'info');
     const { incomingBytes, chunksReceived, numExpectedChunks } = state;
     
     // Handle header chunk
@@ -403,9 +409,15 @@ class GroundStation {
       }
 
       // Extract hex data from RX messages
-      const hexData = this.extractHexData(new TextDecoder().decode(value));
+      const rawData = new TextDecoder().decode(value);
+      this.log(`Raw serial data: ${rawData}`, 'info');
+      
+      const hexData = this.extractHexData(rawData);
       if (hexData) {
-        return this.hexToUint8Array(hexData);
+        this.log(`Extracted hex data: ${hexData}`, 'info');
+        const uint8Data = this.hexToUint8Array(hexData);
+        this.log(`Converted to ${uint8Data.length} bytes`, 'info');
+        return uint8Data;
       }
       return null;
     } catch (error) {
