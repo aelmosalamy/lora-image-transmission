@@ -306,16 +306,23 @@ class GroundStation {
 
       const dataView = new DataView(headerData.buffer);
       const incomingBytes = dataView.getUint32(4, false);
+      const width = dataView.getUint32(8, false);
+      const height = dataView.getUint32(12, false);
+      const numExpectedChunks = Math.ceil(incomingBytes / this.CHUNK_SIZE);
+
+      this.log(`LORA preamble detected`, 'success');
+      this.log(`Image dimensions: ${width}x${height}`, 'info');
+      this.log(`Total bytes to receive: ${incomingBytes}`, 'info');
+      this.log(`Expected chunks: ${numExpectedChunks}`, 'info');
+
       const newState = {
         ...state,
         incomingBytes,
-        width: dataView.getUint32(8, false), 
-        height: dataView.getUint32(12, false),
+        width,
+        height,
         startTime: performance.now(),
-        numExpectedChunks: Math.ceil(incomingBytes / this.CHUNK_SIZE)
+        numExpectedChunks
       };
-
-      this.log(`Detected ${newState.width}x${newState.height} image`, 'info');
       return newState;
     }
 
@@ -413,6 +420,7 @@ class GroundStation {
 
       // Get the raw data and split by lines
       const rawData = new TextDecoder().decode(value);
+      this.log(`Raw data received: ${rawData.trim()}`, 'info');
       const lines = rawData.split('\r\n');
       
       // Look for RX lines
@@ -421,8 +429,10 @@ class GroundStation {
           const match = line.match(/RX "([0-9A-Fa-f]+)"/);
           if (match && match[1]) {
             const hexData = match[1];
+            this.log(`Found hex data: ${hexData}`, 'info');
             const uint8Data = this.hexToUint8Array(hexData);
             if (uint8Data.length > 0) {
+              this.log(`Converted to ${uint8Data.length} bytes`, 'info');
               return uint8Data;
             }
           }
