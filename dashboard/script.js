@@ -325,13 +325,16 @@ class GroundStation {
       const payload = chunkData.slice(2);
 
       if (!chunksReceived[seqNumber]) {
+        const newBytesReceived = state.bytesReceived + chunkData.length; // Include sequence number in count
+        this.log(`Received chunk ${seqNumber}, length ${chunkData.length}, total bytes: ${newBytesReceived}`, 'info');
+        
         return {
           ...state,
           chunksReceived: {
             ...chunksReceived,
             [seqNumber]: payload
           },
-          bytesReceived: state.bytesReceived + payload.length
+          bytesReceived: newBytesReceived
         };
       }
     }
@@ -408,16 +411,22 @@ class GroundStation {
         return null;
       }
 
-      // Extract hex data from RX messages
+      // Get the raw data and split by lines
       const rawData = new TextDecoder().decode(value);
-      this.log(`Raw serial data: ${rawData}`, 'info');
+      const lines = rawData.split('\r\n');
       
-      const hexData = this.extractHexData(rawData);
-      if (hexData) {
-        this.log(`Extracted hex data: ${hexData}`, 'info');
-        const uint8Data = this.hexToUint8Array(hexData);
-        this.log(`Converted to ${uint8Data.length} bytes`, 'info');
-        return uint8Data;
+      // Look for RX lines
+      for (const line of lines) {
+        if (line.startsWith('RX ')) {
+          const match = line.match(/RX "([0-9A-Fa-f]+)"/);
+          if (match && match[1]) {
+            const hexData = match[1];
+            const uint8Data = this.hexToUint8Array(hexData);
+            if (uint8Data.length > 0) {
+              return uint8Data;
+            }
+          }
+        }
       }
       return null;
     } catch (error) {
