@@ -26,44 +26,104 @@
         <button id="advancedToggle">Advanced Settings</button>
       </div>
 
-      <div
-        class="advanced-settings"
-        id="advancedSettings"
-        style="display: none"
-      >
-        <div class="setting-group">
-          <label>
-            <input type="checkbox" id="configureDevice" checked />
-            Configure Device
-          </label>
-        </div>
-        <div class="setting-group">
-          <label>
-            <input type="checkbox" id="configVerbose" />
-            Verbose Mode
-          </label>
-        </div>
-        <div class="setting-group">
-          <label>Frequency (MHz):</label>
-          <input
-            type="number"
-            id="configFrequency"
-            value="868"
-            min="433"
-            max="928"
-          />
-        </div>
-        <div class="setting-group">
-          <label>Spreading Factor:</label>
-          <input type="number" id="configSF" value="7" min="6" max="12" />
-        </div>
-        <div class="setting-group">
-          <label>Bandwidth (kHz):</label>
-          <input type="number" id="configBW" value="250" min="125" max="500" />
-        </div>
-        <div class="setting-group">
-          <label>Power (dBm):</label>
-          <input type="number" id="configPower" value="14" min="0" max="20" />
+      <!-- Modal for advanced settings -->
+      <div id="settingsModal" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Advanced Settings</h2>
+            <button class="close-modal">&times;</button>
+          </div>
+
+          <div class="advanced-settings" id="advancedSettings">
+            <div class="settings-section">
+              <h3>Device Configuration</h3>
+              <div class="settings-row">
+                <div class="setting-group">
+                  <div class="checkbox-options">
+                    <div class="checkbox-option">
+                      <input type="checkbox" id="configureDevice" checked />
+                      <label for="configureDevice" class="checkbox-label"
+                        >Configure Device</label
+                      >
+                    </div>
+                    <div class="checkbox-option">
+                      <input type="checkbox" id="configVerbose" />
+                      <label for="configVerbose" class="checkbox-label"
+                        >Verbose Mode</label
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-section">
+              <h3>Radio Parameters</h3>
+              <div class="settings-row">
+                <div class="setting-group radio-group">
+                  <label class="setting-label">Frequency (MHz):</label>
+                  <div class="radio-options">
+                    <div class="radio-option">
+                      <input
+                        type="radio"
+                        name="frequency"
+                        id="freq868"
+                        value="868"
+                        checked
+                      />
+                      <label for="freq868" class="radio-label">868 MHz</label>
+                    </div>
+                    <div class="radio-option">
+                      <input
+                        type="radio"
+                        name="frequency"
+                        id="freq915"
+                        value="915"
+                      />
+                      <label for="freq915" class="radio-label">915 MHz</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="setting-group">
+                  <label class="setting-label">Spreading Factor:</label>
+                  <input
+                    type="number"
+                    id="configSF"
+                    value="7"
+                    min="6"
+                    max="12"
+                  />
+                </div>
+                <div class="setting-group">
+                  <label class="setting-label">Bandwidth (kHz):</label>
+                  <input
+                    type="number"
+                    id="configBW"
+                    value="250"
+                    min="125"
+                    max="500"
+                  />
+                </div>
+                <div class="setting-group">
+                  <label class="setting-label">Power (dBm):</label>
+                  <input
+                    type="number"
+                    id="configPower"
+                    value="14"
+                    min="0"
+                    max="20"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button id="saveSettings">Save Settings</button>
+          </div>
         </div>
       </div>
 

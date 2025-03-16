@@ -258,13 +258,20 @@ class GroundStation {
   }
 
   updateConfigFromUI() {
-    const frequencyEl = document.getElementById("configFrequency");
+    const freq868El = document.getElementById("freq868");
+    const freq915El = document.getElementById("freq915");
     const sfEl = document.getElementById("configSF");
     const bwEl = document.getElementById("configBW");
     const powerEl = document.getElementById("configPower");
     const verboseEl = document.getElementById("configVerbose");
 
-    if (frequencyEl) this.RF_CONFIG.frequency = parseInt(frequencyEl.value, 10);
+    // Get frequency from radio buttons
+    if (freq868El && freq868El.checked) {
+      this.RF_CONFIG.frequency = 868;
+    } else if (freq915El && freq915El.checked) {
+      this.RF_CONFIG.frequency = 915;
+    }
+    
     if (sfEl) this.RF_CONFIG.spreadingFactor = parseInt(sfEl.value, 10);
     if (bwEl) this.RF_CONFIG.bandwidth = parseInt(bwEl.value, 10);
     if (powerEl) this.RF_CONFIG.powerDbm = parseInt(powerEl.value, 10);
@@ -698,20 +705,37 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Set up advanced settings toggle
-  if (advancedToggle && advancedSettings) {
+  // Modal controls
+  const modal = document.getElementById('settingsModal');
+  const closeModalBtn = document.querySelector('.close-modal');
+  const saveSettingsBtn = document.getElementById('saveSettings');
+  
+  // Setup modal toggle
+  if (advancedToggle) {
     advancedToggle.addEventListener("click", () => {
-      advancedSettings.style.display =
-        advancedSettings.style.display === "none" ? "block" : "none";
-      advancedToggle.textContent =
-        advancedSettings.style.display === "none"
-          ? "Show Advanced Settings"
-          : "Hide Advanced Settings";
+      modal.style.display = 'block';
     });
   }
-
-  // Initialize advanced settings display
-  if (advancedSettings) {
-    advancedSettings.style.display = "none";
+  
+  // Close modal when clicking X
+  if (closeModalBtn) {
+    closeModalBtn.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
   }
+  
+  // Save settings
+  if (saveSettingsBtn) {
+    saveSettingsBtn.addEventListener('click', () => {
+      groundStation.updateConfigFromUI();
+      modal.style.display = 'none';
+    });
+  }
+  
+  // Close modal when clicking outside
+  window.addEventListener('click', (event) => {
+    if (event.target === modal) {
+      modal.style.display = 'none';
+    }
+  });
 });
