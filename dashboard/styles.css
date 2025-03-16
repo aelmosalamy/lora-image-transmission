@@ -217,7 +217,7 @@ button:hover:not(:disabled) {
 }
 
 .log-success {
-  color: #ffffff;
+  color: #08c541;
   text-shadow: none;
   opacity: 0.9;
 }

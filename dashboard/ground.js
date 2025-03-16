@@ -28,11 +28,13 @@ class GroundStation {
       powerDbm: 14,
     };
     this.AT_RXLRPKT = "AT+TEST=RXLRPKT\n";
-    this.RETRANSMISSION_TIMEOUT = 10000; // Increased to 15 seconds
-    this.RX_SWITCH_DELAY = 1000; // Increased to 1 second
+    this.RETRANSMISSION_TIMEOUT = 20000; // Increased to 20 seconds
+    this.RX_SWITCH_DELAY = 1000;
     this.VERBOSE = false;
     this.lastChunkTime = 0;
-    this.CHUNK_TIMEOUT = 5000; // 5 seconds timeout for individual chunks
+    this.CHUNK_TIMEOUT = 5000;
+    this.lastSeqNumber = -1; // Track last sequence number
+    this.outOfOrderChunks = new Map(); // Store out-of-order chunks
 
     // Reception state
     this.buffer = new Uint8Array();
@@ -123,7 +125,6 @@ class GroundStation {
       this.writer = this.port.writable.getWriter();
       this.abortController = new AbortController();
 
-      await this.sleep(1000);
       this.log(
         `Connected to serial port at ${this.RF_CONFIG.baudRate} baud`,
         "success"
@@ -207,13 +208,14 @@ class GroundStation {
 
     let buffer = "";
     while (true) {
+      // we could have also used the stream async iterable protocol here, but will keep it like this for parity with the Python version
       const { value, done } = await this.reader.read();
       if (done) {
         throw new Error("Reader stream closed");
       }
 
       const chunk = new TextDecoder().decode(value);
-      this.log(`Raw chunk received: "${chunk}"`, "info");
+      // this.log(`Raw chunk received: "${chunk}"`, "info");
       buffer += chunk;
 
       // Only process complete packets terminated by \r\n
@@ -377,7 +379,7 @@ class GroundStation {
           this.log(`Receiving ${this.incomingBytes} bytes`, "info");
 
           this.startTime = performance.now();
-          this.updateProgress(0, this.incomingBytes); // Initialize progress bar
+          this.updateProgress(0, this.incomingBytes);
           chunkBytes = chunkBytes.slice(this.PROTOCOL_HEADER_SIZE);
         }
 
@@ -389,7 +391,7 @@ class GroundStation {
           // Update last chunk time
           this.lastChunkTime = performance.now();
 
-          // Validate sequence number - only check if it's within valid range
+          // Validate sequence number
           if (seqNumber >= this.numExpectedChunks) {
             this.log(
               `Invalid sequence number ${seqNumber}, expected < ${this.numExpectedChunks}`,
@@ -407,18 +409,22 @@ class GroundStation {
           // Store the chunk
           this.chunksReceived[seqNumber] = payload;
           this.bytesReceived += payload.length;
+          this.lastSeqNumber = Math.max(this.lastSeqNumber, seqNumber);
           this.log(
             `Received chunk ${seqNumber} (${payload.length} bytes)`,
             "info"
           );
           this.updateProgress(this.bytesReceived, this.incomingBytes);
 
+          // Process any out-of-order chunks that can now be processed
+          this.processOutOfOrderChunks();
+
           // Check for missing chunks periodically
           if (
             this.bytesReceived > 0 &&
             performance.now() - this.lastChunkTime > this.CHUNK_TIMEOUT
           ) {
-            this.checkAndRequestMissingChunks();
+            await this.checkAndRequestMissingChunks();
           }
         }
 
@@ -471,6 +477,24 @@ class GroundStation {
       this.log(`Server error: ${error.message}`, "error");
     } finally {
       await this.stopReception();
+    }
+  }
+
+  processOutOfOrderChunks() {
+    // Process any chunks that can now be processed in sequence
+    let processed = true;
+    while (processed) {
+      processed = false;
+      for (const [seq, chunk] of this.outOfOrderChunks.entries()) {
+        if (seq === this.lastSeqNumber + 1) {
+          this.chunksReceived[seq] = chunk;
+          this.bytesReceived += chunk.length;
+          this.lastSeqNumber = seq;
+          this.outOfOrderChunks.delete(seq);
+          this.log(`Processed out-of-order chunk ${seq}`, "info");
+          processed = true;
+        }
+      }
     }
   }
 
