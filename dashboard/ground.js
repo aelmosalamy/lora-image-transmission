@@ -581,8 +581,25 @@ class GroundStation {
 
       this.log("Image displayed successfully", "success");
       this.saveImageToFile(buffer, "received_image.jpg");
+      
+      // For demonstration, update drone position each time an image is received
+      // In a real application, you would extract GPS data from the transmission
+      this.updateDronePosition();
     } catch (error) {
       this.log(`Error displaying image: ${error.message}`, "error");
+    }
+  }
+  
+  updateDronePosition() {
+    // Simulate random movement within ~0.01 degrees of default position
+    // In a real application, you would extract GPS data from the transmission
+    const randomLat = DEFAULT_LAT + (Math.random() - 0.5) * 0.02;
+    const randomLng = DEFAULT_LNG + (Math.random() - 0.5) * 0.02;
+    
+    // Update the map marker
+    if (typeof updateDronePosition === 'function') {
+      updateDronePosition(randomLat, randomLng);
+      this.log(`Updated drone position: ${randomLat.toFixed(6)}, ${randomLng.toFixed(6)}`, "info");
     }
   }
 
@@ -697,6 +714,15 @@ AT+TEST=RFCFG,${this.RF_CONFIG.frequency},SF${this.RF_CONFIG.spreadingFactor},${
   }
 }
 
+// Google Maps variables
+let map;
+let marker;
+let path;
+const DEFAULT_LAT = 37.7749;
+const DEFAULT_LNG = -122.4194;
+let currentMarkerPosition = { lat: DEFAULT_LAT, lng: DEFAULT_LNG };
+let pathCoordinates = [];
+
 // Initialize when the page is loaded
 document.addEventListener("DOMContentLoaded", () => {
   const groundStation = new GroundStation();
@@ -706,8 +732,86 @@ document.addEventListener("DOMContentLoaded", () => {
   const stopButton = document.getElementById("stopReception");
   const advancedToggle = document.getElementById("advancedToggle");
   const imageToggle = document.getElementById("imageToggle");
+  const viewToggle = document.getElementById("viewToggle");
   const receivedImage = document.getElementById("receivedImage");
+  const viewTitle = document.getElementById("viewTitle");
+  
+  // Initialize Google Maps
+  initMap();
 
+  // Initialize view containers
+  const imageView = document.getElementById("imageView");
+  const mapView = document.getElementById("mapView");
+  
+  // Set initial view state
+  if (imageView) imageView.style.display = "flex";
+  if (mapView) mapView.style.display = "none";
+  
+  // Setup view toggle functionality
+  if (viewToggle) {
+    viewToggle.addEventListener("click", () => {
+      const imageView = document.getElementById("imageView");
+      const mapView = document.getElementById("mapView");
+      
+      console.log("Toggling view between image and map");
+      
+      if (imageView.style.display === "none") {
+        // Switch to image view
+        console.log("Switching to image view");
+        imageView.style.display = "flex";
+        mapView.style.display = "none";
+        viewTitle.textContent = "Received Image";
+        
+        // Show image toggle only in image view
+        if (imageToggle) imageToggle.style.display = "flex";
+      } else {
+        // Switch to map view
+        console.log("Switching to map view");
+        imageView.style.display = "none";
+        mapView.style.display = "block";
+        viewTitle.textContent = "Drone Location";
+        
+        // Hide image toggle in map view
+        if (imageToggle) imageToggle.style.display = "none";
+        
+        // Force map to appear by triggering resize and re-centering
+        setTimeout(() => {
+          if (map) {
+            console.log("Triggering map resize");
+            google.maps.event.trigger(map, 'resize');
+            
+            if (marker) {
+              map.setCenter(marker.getPosition());
+            } else {
+              map.setCenter(new google.maps.LatLng(DEFAULT_LAT, DEFAULT_LNG));
+            }
+          }
+        }, 100);
+      }
+    });
+  }
+
+  // Setup reload map button
+  const reloadMapBtn = document.getElementById("reloadMap");
+  if (reloadMapBtn) {
+    reloadMapBtn.addEventListener("click", () => {
+      console.log("Manually reloading map");
+      initMap();
+      
+      // Switch to map view if not already there
+      const imageView = document.getElementById("imageView");
+      const mapView = document.getElementById("mapView");
+      
+      if (imageView.style.display !== "none") {
+        imageView.style.display = "none";
+        mapView.style.display = "block";
+        
+        if (viewTitle) viewTitle.textContent = "Drone Location";
+        if (imageToggle) imageToggle.style.display = "none";
+      }
+    });
+  }
+  
   // Setup image toggle functionality
   if (imageToggle && receivedImage) {
     imageToggle.addEventListener("click", () => {
@@ -774,3 +878,175 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
+// Initialize Google Maps
+function initMap() {
+  console.log("Initializing Google Maps...");
+  
+  // Check if Maps API is already loaded
+  if (window.google && window.google.maps) {
+    console.log("Google Maps API already loaded, initializing map...");
+    initializeMapObjects();
+    return;
+  }
+  
+  // Create a script element to load Google Maps API
+  const script = document.createElement('script');
+  // Use Google Maps with no API key (development mode)
+  script.src = `https://maps.googleapis.com/maps/api/js?callback=onMapApiLoaded`;
+  script.async = true;
+  script.defer = true;
+  
+  // Add error handling
+  script.onerror = function() {
+    console.error("Failed to load Google Maps API");
+    document.getElementById("map").innerHTML = 
+      '<div style="padding: 20px; text-align: center; color: #ef4444;">Failed to load Google Maps</div>';
+  };
+  
+  document.head.appendChild(script);
+  
+  // Create a global callback function for the API to call when loaded
+  window.onMapApiLoaded = function() {
+    console.log("Google Maps API loaded successfully");
+    initializeMapObjects();
+  };
+}
+
+function initializeMapObjects() {
+    map = new google.maps.Map(document.getElementById("map"), {
+      center: { lat: DEFAULT_LAT, lng: DEFAULT_LNG },
+      zoom: 14,
+      mapTypeId: google.maps.MapTypeId.TERRAIN,
+      styles: [
+        { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+        { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+        { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+        {
+          featureType: "administrative.locality",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#d59563" }],
+        },
+        {
+          featureType: "poi",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#d59563" }],
+        },
+        {
+          featureType: "poi.park",
+          elementType: "geometry",
+          stylers: [{ color: "#263c3f" }],
+        },
+        {
+          featureType: "poi.park",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#6b9a76" }],
+        },
+        {
+          featureType: "road",
+          elementType: "geometry",
+          stylers: [{ color: "#38414e" }],
+        },
+        {
+          featureType: "road",
+          elementType: "geometry.stroke",
+          stylers: [{ color: "#212a37" }],
+        },
+        {
+          featureType: "road",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#9ca5b3" }],
+        },
+        {
+          featureType: "road.highway",
+          elementType: "geometry",
+          stylers: [{ color: "#746855" }],
+        },
+        {
+          featureType: "road.highway",
+          elementType: "geometry.stroke",
+          stylers: [{ color: "#1f2835" }],
+        },
+        {
+          featureType: "road.highway",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#f3d19c" }],
+        },
+        {
+          featureType: "transit",
+          elementType: "geometry",
+          stylers: [{ color: "#2f3948" }],
+        },
+        {
+          featureType: "transit.station",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#d59563" }],
+        },
+        {
+          featureType: "water",
+          elementType: "geometry",
+          stylers: [{ color: "#17263c" }],
+        },
+        {
+          featureType: "water",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#515c6d" }],
+        },
+        {
+          featureType: "water",
+          elementType: "labels.text.stroke",
+          stylers: [{ color: "#17263c" }],
+        },
+      ],
+    });
+
+    // Create a path for the drone's trail
+    pathCoordinates.push({ lat: DEFAULT_LAT, lng: DEFAULT_LNG });
+    path = new google.maps.Polyline({
+      path: pathCoordinates,
+      geodesic: true,
+      strokeColor: "#60a5fa",
+      strokeOpacity: 0.7,
+      strokeWeight: 3
+    });
+    path.setMap(map);
+    
+    // Add a marker
+    marker = new google.maps.Marker({
+      position: { lat: DEFAULT_LAT, lng: DEFAULT_LNG },
+      map: map,
+      title: "Drone location",
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 12,
+        fillColor: "#60a5fa",
+        fillOpacity: 0.9,
+        strokeColor: "#ffffff",
+        strokeWeight: 3,
+      },
+      animation: google.maps.Animation.DROP
+    });
+    
+    console.log("Map and marker initialized successfully");
+  }
+
+// Update drone position on the map
+function updateDronePosition(lat, lng) {
+  if (!map || !marker) return;
+  
+  const position = { lat, lng };
+  marker.setPosition(position);
+  map.panTo(position);
+  currentMarkerPosition = position;
+  
+  // Add to path trail
+  pathCoordinates.push(position);
+  if (path) {
+    path.setPath(pathCoordinates);
+    
+    // Limit trail length to 20 points
+    if (pathCoordinates.length > 20) {
+      pathCoordinates.shift();
+    }
+  }
+}

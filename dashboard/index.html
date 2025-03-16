@@ -133,13 +133,36 @@
           <div id="log" class="log"></div>
         </div>
 
-        <div class="image-container">
-          <h2>Received Image</h2>
-          <button id="imageToggle" class="image-toggle-btn" title="Toggle image size">
-            <span class="icon-resize"></span>
-          </button>
-          <img id="receivedImage" style="display: none" />
-          <div id="downloadContainer"></div>
+        <div class="view-container">
+          <div class="view-header">
+            <h2 id="viewTitle">Received Image</h2>
+            <div class="view-toggles">
+              <button
+                id="viewToggle"
+                class="view-toggle-btn"
+                title="Toggle between image and map"
+              >
+                <span style="font-size: 20px;">🌎</span>
+              </button>
+              <button
+                id="imageToggle"
+                class="image-toggle-btn"
+                title="Toggle image size"
+              >
+                <span class="icon-resize"></span>
+              </button>
+            </div>
+          </div>
+
+          <div id="imageView" class="image-container">
+            <img id="receivedImage" style="display: none" />
+            <div id="downloadContainer"></div>
+          </div>
+
+          <div id="mapView" class="map-container">
+            <div id="map"></div>
+            <button id="reloadMap" class="reload-map-btn" title="Reload map">🗺️ Reload Map</button>
+          </div>
         </div>
       </div>
     </div>

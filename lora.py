@@ -574,8 +574,7 @@ class DroneGUI:
 
             # stochastically fail packets to simulate real life
             if i != 0 and random() < 0.3:
-                pass
-                #continue
+                continue
 
             # fire off
             r = self.drone.send(chunk)
