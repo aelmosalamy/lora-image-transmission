@@ -59,7 +59,9 @@ html {
   box-sizing: border-box;
 }
 
-*, *:before, *:after {
+*,
+*:before,
+*:after {
   box-sizing: inherit;
 }
 
@@ -372,6 +374,14 @@ input[type="checkbox"] {
   color: #ffffff;
   text-shadow: none;
   opacity: 0.7;
+}
+
+.log-tx {
+  color: rgb(0, 158, 158);
+}
+
+.log-rx {
+  color: rgb(206, 185, 0);
 }
 
 .log-debug {

@@ -59,6 +59,8 @@ class GroundStation {
       error: "[-] ",
       success: "[+] ",
       info: "[*] ",
+      tx: ">>> ",
+      rx: "<<< ",
     };
     const prefix = prefixes[type] || prefixes.info;
 
@@ -209,7 +211,9 @@ class GroundStation {
     let buffer = "";
     while (true) {
       // we could have also used the stream async iterable protocol here, but will keep it like this for parity with the Python version
-      const { value, done } = await this.reader.read();
+      const { value, done } = await this.reader.read({
+        signal: AbortSignal.timeout(4000),
+      });
       if (done) {
         throw new Error("Reader stream closed");
       }
@@ -224,7 +228,7 @@ class GroundStation {
         // Keep the last partial line in the buffer
         buffer = lines.pop() || "";
         const completeLines = lines.join("\r\n");
-        this.log(`Complete packet received: "${completeLines}"`, "info");
+        // this.log(`Complete packet received: "${completeLines}"`, "info");
         return completeLines;
       }
     }
@@ -239,11 +243,11 @@ class GroundStation {
       // Send command - encode as UTF-8 bytes
       const encoder = new TextEncoder();
       await this.writer.write(encoder.encode(command));
-      this.log(`Sent command: ${command.trim()}`);
+      this.log(`Sent command: ${command.trim()}`, "tx");
 
       // Read response - wait for complete packet
       let response = await this.readUntilNewline();
-      this.log(`Raw response: "${response}"`);
+      this.log(`Got response: "${response}"`, "rx");
 
       // Only fail on ERROR response
       if (response.includes("ERROR")) {
@@ -271,7 +275,7 @@ class GroundStation {
     } else if (freq915El && freq915El.checked) {
       this.RF_CONFIG.frequency = 915;
     }
-    
+
     if (sfEl) this.RF_CONFIG.spreadingFactor = parseInt(sfEl.value, 10);
     if (bwEl) this.RF_CONFIG.bandwidth = parseInt(bwEl.value, 10);
     if (powerEl) this.RF_CONFIG.powerDbm = parseInt(powerEl.value, 10);
@@ -381,7 +385,7 @@ class GroundStation {
             this.incomingBytes / this.CHUNK_SIZE
           );
 
-          this.log("LORA", "success");
+          this.log("LORA: Incoming image!", "success");
           this.log(`Detected ${this.width}x${this.height} image`, "info");
           this.log(`Receiving ${this.incomingBytes} bytes`, "info");
 
@@ -415,7 +419,7 @@ class GroundStation {
 
           // Store the chunk
           this.chunksReceived[seqNumber] = payload;
-          this.bytesReceived += payload.length;
+          this.bytesReceived += chunkBytes.length;
           this.lastSeqNumber = Math.max(this.lastSeqNumber, seqNumber);
           this.log(
             `Received chunk ${seqNumber} (${payload.length} bytes)`,
@@ -604,7 +608,7 @@ class GroundStation {
           try {
             await this.readableStreamClosed;
           } catch (e) {
-            // Ignore stream closure errors
+            this.log(`Read stream closed with error: ${e}`, "error");
           }
         }
         this.reader = null;
@@ -616,7 +620,7 @@ class GroundStation {
           try {
             await this.writableStreamClosed;
           } catch (e) {
-            // Ignore stream closure errors
+            this.log(`Write stream closed with error: ${e}`, "error");
           }
         }
         this.writer = null;
@@ -706,36 +710,36 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Modal controls
-  const modal = document.getElementById('settingsModal');
-  const closeModalBtn = document.querySelector('.close-modal');
-  const saveSettingsBtn = document.getElementById('saveSettings');
-  
+  const modal = document.getElementById("settingsModal");
+  const closeModalBtn = document.querySelector(".close-modal");
+  const saveSettingsBtn = document.getElementById("saveSettings");
+
   // Setup modal toggle
   if (advancedToggle) {
     advancedToggle.addEventListener("click", () => {
-      modal.style.display = 'block';
+      modal.style.display = "block";
     });
   }
-  
+
   // Close modal when clicking X
   if (closeModalBtn) {
-    closeModalBtn.addEventListener('click', () => {
-      modal.style.display = 'none';
+    closeModalBtn.addEventListener("click", () => {
+      modal.style.display = "none";
     });
   }
-  
+
   // Save settings
   if (saveSettingsBtn) {
-    saveSettingsBtn.addEventListener('click', () => {
+    saveSettingsBtn.addEventListener("click", () => {
       groundStation.updateConfigFromUI();
-      modal.style.display = 'none';
+      modal.style.display = "none";
     });
   }
-  
+
   // Close modal when clicking outside
-  window.addEventListener('click', (event) => {
+  window.addEventListener("click", (event) => {
     if (event.target === modal) {
-      modal.style.display = 'none';
+      modal.style.display = "none";
     }
   });
 });
