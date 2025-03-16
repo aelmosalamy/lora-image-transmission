@@ -183,10 +183,10 @@ class GroundStation {
     const dataView = new DataView(buffer);
 
     // Set "MISS" header
-    uint8View[0] = 77; // 'M'
-    uint8View[1] = 73; // 'I'
-    uint8View[2] = 83; // 'S'
-    uint8View[3] = 83; // 'S'
+    uint8View[0] = 0x4d; // 'M'
+    uint8View[1] = 0x49; // 'I'
+    uint8View[2] = 0x53; // 'S'
+    uint8View[3] = 0x53; // 'S'
 
     // Set number of missing chunks
     dataView.setUint16(4, missingChunks.length, false);
@@ -448,21 +448,10 @@ class GroundStation {
         }
       }
 
-      // Acknowledge successfully receiving all packets
-      await this.sleep(this.RX_SWITCH_DELAY);
-      for (let i = 0; i < 3; i++) {
-        const missMessage = this.createMissMessage([]);
-        await this.sendCommand(
-          `AT+TEST=TXLRPKT, "${missMessage.toString("hex")}"\n`
-        );
-        await this.sleep(1000);
-      }
-      this.log("Confirmation sent (3x)", "success");
-
       const duration = (performance.now() - this.startTime) / 1000;
       const bytesPerSecond = Math.round(this.incomingBytes / duration);
 
-      // Sort and assemble buffer from received chunks
+      // Sort and assemble received chunks based on sequence number
       const sortedChunks = Object.entries(this.chunksReceived)
         .sort(([a], [b]) => parseInt(a) - parseInt(b))
         .map(([_, chunk]) => chunk);
@@ -484,6 +473,21 @@ class GroundStation {
       this.displayImage(imageBuffer);
       this.saveImageToFile(imageBuffer, "bytes.bin");
       this.log(`Saved ${this.incomingBytes} bytes to "bytes.bin"`, "success");
+
+      // Acknowledge successfully receiving all packets
+      await this.sleep(this.RX_SWITCH_DELAY);
+      for (let i = 0; i < 3; i++) {
+        const missMessageBytes = this.createMissMessage([]);
+        const missMessage = [...missMessageBytes]
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+        window.m = missMessageBytes;
+        window.k = missMessage;
+        await this.sendCommand(`AT+TEST=TXLRPKT, "${missMessage}"\n`);
+        // interval confirmation with exponential backoff
+        await this.sleep(1000 * 2 ** i);
+      }
+      this.log("Confirmation sent (3x)", "success");
     } catch (error) {
       this.log(`Server error: ${error.message}`, "error");
     } finally {
@@ -565,6 +569,14 @@ class GroundStation {
       if (this.imgElement) {
         this.imgElement.src = imageUrl;
         this.imgElement.style.display = "block";
+
+        // Apply default image display class if not already set
+        if (
+          !this.imgElement.classList.contains("image-original") &&
+          !this.imgElement.classList.contains("image-fill")
+        ) {
+          this.imgElement.classList.add("image-original");
+        }
       }
 
       this.log("Image displayed successfully", "success");
@@ -590,7 +602,7 @@ class GroundStation {
       downloadContainer.appendChild(link);
     }
 
-    link.click();
+    // link.click();
   }
 
   async stopReception() {
@@ -693,7 +705,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const startButton = document.getElementById("startReception");
   const stopButton = document.getElementById("stopReception");
   const advancedToggle = document.getElementById("advancedToggle");
-  const advancedSettings = document.getElementById("advancedSettings");
+  const imageToggle = document.getElementById("imageToggle");
+  const receivedImage = document.getElementById("receivedImage");
+
+  // Setup image toggle functionality
+  if (imageToggle && receivedImage) {
+    imageToggle.addEventListener("click", () => {
+      if (receivedImage.classList.contains("image-fill")) {
+        receivedImage.classList.remove("image-fill");
+        receivedImage.classList.add("image-original");
+        imageToggle.title = "Fill frame";
+      } else {
+        receivedImage.classList.remove("image-original");
+        receivedImage.classList.add("image-fill");
+        imageToggle.title = "Original size";
+      }
+    });
+
+    // Default to contain mode
+    receivedImage.classList.add("image-fill");
+  }
 
   if (startButton) {
     startButton.addEventListener("click", () => {
