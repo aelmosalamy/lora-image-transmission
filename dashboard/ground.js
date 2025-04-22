@@ -20,7 +20,7 @@ class GroundStation {
 
     // Constants matching lora.py
     this.PROTOCOL_HEADER_SIZE = 16;
-    this.CHUNK_SIZE = 200;
+    this.CHUNK_SIZE = 202;
     this.RF_CONFIG = {
       baudRate: 230400,
       frequency: 868,
@@ -589,7 +589,7 @@ class GroundStation {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
       await this.sendCommand(`AT+TEST=TXLRPKT, "${hexMissMessage}"\n`);
-      await this.sleep(1000);
+      await this.sleep(100);
     }
 
     await this.sendCommand(this.AT_RXLRPKT);
@@ -598,13 +598,11 @@ class GroundStation {
 
   displayImage(buffer) {
     try {
-      //const blob = new Blob([buffer], { type: "image/jpeg" });
-      //const imageUrl = URL.createObjectURL(blob);
+      // convert the received image from base64 to hex
       const decoder = new TextDecoder();
       const text = decoder.decode(buffer);
-      console.log(text);
-
       const imageUrl = "data:image/jpeg;base64," + text;
+      console.log(`text: ${text}`);
 
       if (this.imgElement) {
         this.imgElement.src = imageUrl;
