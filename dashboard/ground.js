@@ -414,31 +414,32 @@ class GroundStation {
         ) {
           const headerData = chunkBytes.slice(0, this.PROTOCOL_HEADER_SIZE);
           const preamble = new TextDecoder().decode(headerData.slice(0, 4));
+          const dataView = new DataView(headerData.buffer);
 
-          if (!["LORA", "CORD"].includes(preamble)) {
+          if (preamble === 'LORA') {
+            this.incomingBytes = dataView.getUint32(4, false);
+            this.width = dataView.getUint32(8, false);
+            this.height = dataView.getUint32(12, false);
+            this.numExpectedChunks = Math.ceil(
+              this.incomingBytes / this.CHUNK_SIZE
+            );
+
+            this.transferStartTime = performance.now();
+            this.lastChunkTime = this.transferStartTime;
+
+            this.log("LORA: Incoming image!", "success");
+            this.log(`Detected ${this.width}x${this.height} image`, "info");
+            this.log(`Receiving ${this.incomingBytes} bytes`, "info");
+
+            this.updateProgress(0, this.incomingBytes);
+            chunkBytes = chunkBytes.slice(this.PROTOCOL_HEADER_SIZE);
+          } else if (preamble === 'CORD') {
+            handleCoordinates(dataView)
+          } else {
             this.log("Received invalid preamble/cord header, dropping packet", "error");
             this.incomingBytes = 0;
             continue;
           }
-
-          const dataView = new DataView(headerData.buffer);
-
-          this.incomingBytes = dataView.getUint32(4, false);
-          this.width = dataView.getUint32(8, false);
-          this.height = dataView.getUint32(12, false);
-          this.numExpectedChunks = Math.ceil(
-            this.incomingBytes / this.CHUNK_SIZE
-          );
-
-          this.transferStartTime = performance.now();
-          this.lastChunkTime = this.transferStartTime;
-
-          this.log("LORA: Incoming image!", "success");
-          this.log(`Detected ${this.width}x${this.height} image`, "info");
-          this.log(`Receiving ${this.incomingBytes} bytes`, "info");
-
-          this.updateProgress(0, this.incomingBytes);
-          chunkBytes = chunkBytes.slice(this.PROTOCOL_HEADER_SIZE);
         }
 
         // Handle data chunk
