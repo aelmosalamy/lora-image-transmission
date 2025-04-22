@@ -10,7 +10,6 @@ class GroundStation {
     this.isReceiving = false;
     this.transferStartTime = null;
     this.lastChunkTime = null;
-    // globably track ongoing read promises
 
     // Display elements
     this.logElement = document.getElementById("log");
@@ -416,13 +415,14 @@ class GroundStation {
           const headerData = chunkBytes.slice(0, this.PROTOCOL_HEADER_SIZE);
           const preamble = new TextDecoder().decode(headerData.slice(0, 4));
 
-          if (preamble !== "LORA") {
-            this.log("Received invalid preamble, dropping packet", "error");
+          if (!["LORA", "CORD"].includes(preamble)) {
+            this.log("Received invalid preamble/cord header, dropping packet", "error");
             this.incomingBytes = 0;
             continue;
           }
 
           const dataView = new DataView(headerData.buffer);
+
           this.incomingBytes = dataView.getUint32(4, false);
           this.width = dataView.getUint32(8, false);
           this.height = dataView.getUint32(12, false);
@@ -759,8 +759,8 @@ class GroundStation {
 let map;
 let marker;
 let path;
-const DEFAULT_LAT = 37.7749;
-const DEFAULT_LNG = -122.4194;
+const DEFAULT_LAT = 25.348766;
+const DEFAULT_LNG = 55.405403;
 let currentMarkerPosition = { lat: DEFAULT_LAT, lng: DEFAULT_LNG };
 let pathCoordinates = [];
 
