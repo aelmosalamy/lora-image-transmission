@@ -446,6 +446,13 @@ class GroundStation {
 
         // Handle data chunk
         if (chunkBytes.length > 2) {
+          // check if CORD
+          if (chunkBytes.length > 4 && new TextDecoder().decode(chunkBytes.slice(0, 4)) === 'CORD') {
+            const [lat, lng] = handleCoordinates(chunkBytes.slice(4))
+            this.log(`Received CORD: ${lat}, ${lng} coordinates`, 'info')
+            continue
+          }
+
           const seqNumber = new DataView(chunkBytes.buffer).getUint16(0, false);
           const payload = chunkBytes.slice(2);
 
