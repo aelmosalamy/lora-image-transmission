@@ -10,6 +10,7 @@ class GroundStation {
     this.isReceiving = false;
     this.transferStartTime = null;
     this.lastChunkTime = null;
+    // globably track ongoing read promises
 
     // Display elements
     this.logElement = document.getElementById("log");
@@ -30,7 +31,7 @@ class GroundStation {
     };
     this.AT_RXLRPKT = "AT+TEST=RXLRPKT\n";
     this.RETRANSMISSION_TIMEOUT = 10000; // Increased to 10 seconds
-    this.RX_SWITCH_DELAY = 1000;
+    this.RX_SWITCH_DELAY = 500;
     this.VERBOSE = false;
     this.lastChunkTime = 0;
     this.lastSeqNumber = -1; // Track last sequence number
@@ -212,7 +213,9 @@ class GroundStation {
 
   async readWithTimeout(ms) {
     while (true) {
-      const readPromise = this.reader.read();
+      console.log('[*] Reading...') 
+      const readPromise = this.reader.read()
+
       const timeoutPromise = new Promise(
         (resolve) =>
           (this._readTimer = setTimeout(() => resolve("timeout"), ms))
@@ -221,12 +224,21 @@ class GroundStation {
       const result = await Promise.race([readPromise, timeoutPromise]);
 
       if (result === "timeout") {
+        this.reader.cancel()
+        console.log('Timed out. Canceled reader')
         clearTimeout(this._readTimer); // safety
         await this.checkAndRequestMissingChunks();
         continue; // immediately try reading again
       }
 
       clearTimeout(this._readTimer);
+      const { value, done } = result
+
+      // our stream got canceled (proven by non-existing value and bytes not complete)
+      if (value === undefined && this.bytesReceived < this.incomingBytes) {
+        this.reader = this.port.readable.getReader()
+      }
+
       return result; // { value, done }
     }
   }
@@ -242,9 +254,6 @@ class GroundStation {
       const { value, done } = await this.readWithTimeout(
         this.RETRANSMISSION_TIMEOUT
       );
-      if (done) {
-        throw new Error("Reader stream closed");
-      }
 
       const chunk = new TextDecoder().decode(value);
       buffer += chunk;
@@ -357,20 +366,11 @@ class GroundStation {
         let isCollectingHex = false;
 
         while (true) {
-          //   const { value, done } = await this.reader.read();
           const { value, done } = await this.readWithTimeout(
             this.RETRANSMISSION_TIMEOUT
           );
           if (done) {
-            throw new Error("Reader stream closed");
-          }
-
-          let timeout;
-          if (this.incomingBytes) {
-            timeout = setTimeout(
-              this.reader.close,
-              this.RETRANSMISSION_TIMEOUT
-            );
+            throw new Error("Reader stream closed 1");
           }
 
           this.startTime = performance.now();
@@ -562,11 +562,9 @@ class GroundStation {
         `Missing ${this.missingChunks.size} chunks: ${Array.from(
           this.missingChunks
         ).join(", ")}`,
-        "error"
+        "warning"
       );
       await this.requestRetransmission(Array.from(this.missingChunks));
-    } else {
-      this.log("All chunks received successfully", "success");
     }
   }
 
@@ -600,13 +598,13 @@ class GroundStation {
 
   displayImage(buffer) {
     try {
-      // const blob = new Blob([buffer], { type: "image/jpeg" });
-      // const imageUrl = URL.createObjectURL(blob);
-      const decoder = new TextDecoder();
-      const text = decoder.decode(buffer);
-      console.log(text);
+      const blob = new Blob([buffer], { type: "image/jpeg" });
+      const imageUrl = URL.createObjectURL(blob);
+      // const decoder = new TextDecoder();
+      // const text = decoder.decode(buffer);
+      // console.log(text);
 
-      const imageUrl = "data:image/jpeg;base64," + text;
+      // const imageUrl = "data:image/jpeg," + text;
 
       if (this.imgElement) {
         this.imgElement.src = imageUrl;
@@ -707,7 +705,7 @@ class GroundStation {
       }
 
       this.log("Reception stopped", "info");
-      this.updateConnectionStatus(false);
+      // this.
     } catch (error) {
       this.log(`Error during cleanup: ${error.message}`, "error");
       this.updateConnectionStatus(false);
