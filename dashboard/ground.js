@@ -598,13 +598,13 @@ class GroundStation {
 
   displayImage(buffer) {
     try {
-      const blob = new Blob([buffer], { type: "image/jpeg" });
-      const imageUrl = URL.createObjectURL(blob);
-      // const decoder = new TextDecoder();
-      // const text = decoder.decode(buffer);
-      // console.log(text);
+      //const blob = new Blob([buffer], { type: "image/jpeg" });
+      //const imageUrl = URL.createObjectURL(blob);
+      const decoder = new TextDecoder();
+      const text = decoder.decode(buffer);
+      console.log(text);
 
-      // const imageUrl = "data:image/jpeg," + text;
+      const imageUrl = "data:image/jpeg;base64," + text;
 
       if (this.imgElement) {
         this.imgElement.src = imageUrl;
