@@ -434,7 +434,8 @@ class GroundStation {
             this.updateProgress(0, this.incomingBytes);
             chunkBytes = chunkBytes.slice(this.PROTOCOL_HEADER_SIZE);
           } else if (preamble === 'CORD') {
-            handleCoordinates(dataView)
+            handleCoordinates(chunkBytes.slice(4))
+            continue
           } else {
             this.log("Received invalid preamble/cord header, dropping packet", "error");
             this.incomingBytes = 0;
@@ -1098,4 +1099,10 @@ function updateDronePosition(lat, lng) {
       pathCoordinates.shift();
     }
   }
+}
+
+function handleCoordinates(coordinateBytes) {
+  const coordinates = new TextDecoder().decode(coordinateBytes) 
+  lat, lng = coordinates.split(',')
+  updateDronePosition(lat, lng)
 }
