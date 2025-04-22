@@ -234,11 +234,11 @@ class GroundStation {
       const { value, done } = result
 
       // our stream got canceled (proven by non-existing value and bytes not complete)
-      if (value === undefined && this.bytesReceived < this.incomingBytes) {
+      if (done && this.bytesReceived < this.incomingBytes) {
         this.reader = this.port.readable.getReader()
+      } else {
+        return result; // { value, done }
       }
-
-      return result; // { value, done }
     }
   }
 
