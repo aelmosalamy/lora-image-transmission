@@ -434,7 +434,8 @@ class GroundStation {
             this.updateProgress(0, this.incomingBytes);
             chunkBytes = chunkBytes.slice(this.PROTOCOL_HEADER_SIZE);
           } else if (preamble === 'CORD') {
-            handleCoordinates(chunkBytes.slice(4))
+            const [lat, lng] = handleCoordinates(chunkBytes.slice(4))
+            this.log(`Received CORD: ${lat}, ${lng} coordinates`, 'info')
             continue
           } else {
             this.log("Received invalid preamble/cord header, dropping packet", "error");
@@ -621,16 +622,12 @@ class GroundStation {
 
       this.log("Image displayed successfully", "success");
       this.saveImageToFile(buffer, "received_image.jpg");
-
-      // For demonstration, update drone position each time an image is received
-      // In a real application, you would extract GPS data from the transmission
-      this.updateDronePosition();
     } catch (error) {
       this.log(`Error displaying image: ${error.message}`, "error");
     }
   }
 
-  updateDronePosition() {
+  updateDronePosition(lat, lng) {
     // Simulate random movement within ~0.01 degrees of default position
     // In a real application, you would extract GPS data from the transmission
     const randomLat = DEFAULT_LAT + (Math.random() - 0.5) * 0.02;
@@ -1105,4 +1102,6 @@ function handleCoordinates(coordinateBytes) {
   const coordinates = new TextDecoder().decode(coordinateBytes) 
   lat, lng = coordinates.split(',')
   updateDronePosition(lat, lng)
+
+  return [lat, lng]
 }
