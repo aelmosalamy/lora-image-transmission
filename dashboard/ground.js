@@ -1107,7 +1107,7 @@ function updateDronePosition(lat, lng) {
 
 function handleCoordinates(coordinateBytes) {
   const coordinates = new TextDecoder().decode(coordinateBytes) 
-  lat, lng = coordinates.split(',')
+  const [lat, lng] = coordinates.split(',')
   updateDronePosition(lat, lng)
 
   return [lat, lng]
