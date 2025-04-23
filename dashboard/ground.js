@@ -213,32 +213,36 @@ class GroundStation {
   async readWithTimeout(ms) {
     while (true) {
       console.log('[*] Reading...') 
-      const readPromise = this.reader.read()
 
+      if (this.readerCanceled) {
+        this.reader = this.port.readable.getReader()
+        this.readerCanceled = false
+      }
+
+      const readPromise = this.reader.read()
       const timeoutPromise = new Promise(
         (resolve) =>
           (this._readTimer = setTimeout(() => resolve("timeout"), ms))
       );
 
+      console.log('[*] Starting race...')
       const result = await Promise.race([readPromise, timeoutPromise]);
+      console.log('[+] Race done. Result =', result)
 
       if (result === "timeout") {
-        this.reader.cancel()
+        await this.reader.cancel()
+        this.readerCanceled = true
         console.log('Timed out. Canceled reader')
         clearTimeout(this._readTimer); // safety
         await this.checkAndRequestMissingChunks();
         continue; // immediately try reading again
       }
+        // must be read promise here
+        clearTimeout(this._readTimer);
+        const { value, done } = result
 
-      clearTimeout(this._readTimer);
-      const { value, done } = result
-
-      // our stream got canceled (proven by non-existing value and bytes not complete)
-      if (done && this.bytesReceived < this.incomingBytes) {
-        this.reader = this.port.readable.getReader()
-      } else {
-        return result; // { value, done }
-      }
+        // // our stream got canceled (proven by non-existing value and bytes not complete)
+        return { value, done };
     }
   }
 
