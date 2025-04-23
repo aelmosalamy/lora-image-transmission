@@ -14,10 +14,13 @@ class GroundStation {
     // Display elements
     this.logElement = document.getElementById("log");
     this.imgElement = document.getElementById("receivedImage");
+    this.imgQueueEl = document.getElementById('image-queue')
     this.progressBar = document.getElementById("progressBar");
     this.progressText = document.getElementById("progressText");
     this.configureCheckbox = document.getElementById("configureDevice");
-
+    this.startButton = document.getElementById('startReception')
+    this.stopButton = document.getElementById('stopReception')
+    
     // Constants matching lora.py
     this.PROTOCOL_HEADER_SIZE = 16;
     this.CHUNK_SIZE = 202;
@@ -25,7 +28,7 @@ class GroundStation {
       baudRate: 230400,
       frequency: 868,
       spreadingFactor: 7,
-      bandwidth: 250,
+      bandwidth: 500,
       powerDbm: 14,
     };
     this.AT_RXLRPKT = "AT+TEST=RXLRPKT\n";
@@ -241,7 +244,7 @@ class GroundStation {
         clearTimeout(this._readTimer);
       
         // // our stream got canceled (proven by non-existing value and bytes not complete)
-        return { value, done };
+        return result; // { value, done }
     }
   }
 
@@ -327,6 +330,9 @@ class GroundStation {
 
   async launchServer() {
     try {
+      this.stopButton.disabled = false
+      this.startButton.disabled = true
+
       this.port = await this.requestPort();
       await this.connectPort();
 
@@ -441,7 +447,7 @@ class GroundStation {
             this.log(`Received CORD: ${lat}, ${lng} coordinates`, 'info')
             continue
           } else {
-            this.log("Received invalid preamble/cord header, dropping packet", "error");
+            console.log("[-] Received invalid preamble/cord header, dropping packet");
             this.incomingBytes = 0;
             continue;
           }
@@ -520,7 +526,7 @@ class GroundStation {
       );
 
       this.displayImage(imageBuffer);
-      this.saveImageToFile(imageBuffer, "bytes.bin");
+      this.saveImageToFile(imageBuffer, "image.jpeg");
       this.log(`Saved ${this.incomingBytes} bytes to "bytes.bin"`, "success");
 
       // Acknowledge successfully receiving all packets
@@ -539,9 +545,8 @@ class GroundStation {
       this.log("Confirmation sent (3x)", "success");
     } catch (error) {
       this.log(`Server error: ${error.message}`, "error");
-    } finally {
       await this.stopReception();
-    }
+    } 
   }
 
   processOutOfOrderChunks() {
@@ -630,6 +635,20 @@ class GroundStation {
         }
       }
 
+      console.log("[*] Adding image to queue...");
+      const thumbImgContainer = document.createElement('div')
+      const thumbImg = new Image()
+
+      thumbImgContainer.className = 'queued-image'
+      thumbImgContainer.append(thumbImg)
+      thumbImg.src = imageUrl
+      // on click change the main displayed img to our img
+      thumbImg.addEventListener('click', (e) => {
+        this.imgElement.src = e.target.src
+      })
+
+      this.imgQueueEl.append(thumbImgContainer)
+
       this.log("Image displayed successfully", "success");
       this.saveImageToFile(buffer, "received_image.jpg");
     } catch (error) {
@@ -678,9 +697,8 @@ class GroundStation {
     if (!this.isReceiving) return;
 
     this.isReceiving = false;
-    if (this.abortController) {
-      this.abortController.abort();
-    }
+    this.stopButton.disabled = true
+    this.startButton.disabled = false
 
     try {
       if (this.reader) {
@@ -711,8 +729,6 @@ class GroundStation {
         await this.port.close();
       }
 
-      this.log("Reception stopped", "info");
-      // this.
     } catch (error) {
       this.log(`Error during cleanup: ${error.message}`, "error");
       this.updateConnectionStatus(false);
@@ -727,6 +743,7 @@ class GroundStation {
       this.log(`Ground station error: ${error.message}`, "error");
     } finally {
       await this.stopReception();
+      await this.startGroundStation()
     }
   }
 
@@ -968,7 +985,7 @@ function initializeMapObjects() {
   map = new google.maps.Map(document.getElementById("map"), {
     center: { lat: DEFAULT_LAT, lng: DEFAULT_LNG },
     zoom: 14,
-    mapTypeId: google.maps.MapTypeId.TERRAIN,
+    mapTypeId: google.maps.MapTypeId.SATELLITE,
     styles: [
       { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
       {
@@ -1090,7 +1107,8 @@ function initializeMapObjects() {
 // Update drone position on the map
 function updateDronePosition(lat, lng) {
   if (!map || !marker) return;
-
+  lat = parseFloat(lat)
+  lng = parseFloat(lng)
   const position = { lat, lng };
   marker.setPosition(position);
   map.panTo(position);
