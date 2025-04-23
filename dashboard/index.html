@@ -102,7 +102,7 @@
                   <input
                     type="number"
                     id="configBW"
-                    value="250"
+                    value="500"
                     min="125"
                     max="500"
                   />
@@ -127,42 +127,47 @@
         </div>
       </div>
 
-      <div class="content-grid">
-        <div class="log-container">
-          <h2>Log</h2>
-          <div id="log" class="log"></div>
-        </div>
+      <div class="grid-parent">  
+        <div class="content-grid">
+          <div class="log-container">
+            <h2>Log</h2>
+            <div id="log" class="log"></div>
+          </div>
 
-        <div class="view-container">
-          <div class="view-header">
-            <h2 id="viewTitle">Received Image</h2>
-            <div class="view-toggles">
-              <button
-                id="viewToggle"
-                class="view-toggle-btn"
-                title="Toggle between image and map"
-              >
-                <span style="font-size: 20px;">🌎</span>
-              </button>
-              <button
-                id="imageToggle"
-                class="image-toggle-btn"
-                title="Toggle image size"
-              >
-                <span class="icon-resize"></span>
-              </button>
+          <div class="view-container">
+            <div class="view-header">
+              <h2 id="viewTitle">Received Image</h2>
+              <div class="view-toggles">
+                <button
+                  id="viewToggle"
+                  class="view-toggle-btn"
+                  title="Toggle between image and map"
+                >
+                  <span style="font-size: 20px;">🌎</span>
+                </button>
+                <button
+                  id="imageToggle"
+                  class="image-toggle-btn"
+                  title="Toggle image size"
+                >
+                  <span class="icon-resize"></span>
+                </button>
+              </div>
+            </div>
+
+            <div id="imageView" class="image-container">
+              <img id="receivedImage" style="display: none" />
+              <div id="downloadContainer"></div>
+            </div>
+
+            <div id="mapView" class="map-container">
+              <div id="map"></div>
+              <button id="reloadMap" class="reload-map-btn" title="Reload map">🗺️ Reload Map</button>
             </div>
           </div>
-
-          <div id="imageView" class="image-container">
-            <img id="receivedImage" style="display: none" />
-            <div id="downloadContainer"></div>
-          </div>
-
-          <div id="mapView" class="map-container">
-            <div id="map"></div>
-            <button id="reloadMap" class="reload-map-btn" title="Reload map">🗺️ Reload Map</button>
-          </div>
+        </div>
+        <div id="image-queue">
+          <!-- <div class="queued-image"><img src="image.jpg" /></div> -->
         </div>
       </div>
     </div>
