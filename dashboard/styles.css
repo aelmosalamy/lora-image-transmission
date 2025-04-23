@@ -53,6 +53,7 @@ body {
   min-height: 100vh;
   box-sizing: border-box;
   overflow-x: hidden;
+  height: 100vh;
 }
 
 html {
@@ -72,6 +73,10 @@ html {
   border-radius: 8px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
   position: relative;
+  height: 100%;
+
+  display: flex;
+  flex-direction: column;
 }
 
 h1 {
@@ -113,6 +118,12 @@ h1 {
   gap: 0.75rem;
   flex-wrap: nowrap;
   align-items: center;
+}
+
+.grid-parent {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 button {
@@ -324,13 +335,14 @@ input[type="checkbox"] {
   padding: 1rem 0;
   margin: 1rem 0;
   min-height: 300px;
+  height: 80%;
 }
 
 .log-container {
   background-color: #1a1a1a;
   padding: 1rem;
   border-radius: 4px;
-  height: 450px;
+  height: 100%;
   overflow-y: auto;
   border: 1px solid #333333;
   font-family: "Consolas", monospace;
@@ -413,7 +425,7 @@ input[type="checkbox"] {
   padding: 0.5rem;
   border-radius: 4px;
   border: 1px solid #444444;
-  height: 450px;
+  height: 100%;
   position: relative;
 }
 
@@ -566,9 +578,8 @@ input[type="checkbox"] {
 }
 
 #receivedImage.image-fill {
-  object-fit: cover;
-  width: 100%;
   height: 100%;
+  width: auto;
 }
 
 #receivedImage.image-original {
@@ -673,4 +684,53 @@ input[type="checkbox"] {
   padding: 0.75rem 1rem;
   border-bottom-right-radius: 8px;
   backdrop-filter: blur(4px);
+}
+
+#image-queue {
+  counter-reset: queue;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 1rem;
+  width: 100%;
+  height: 500px;
+}
+
+.queued-image {
+  position: relative;
+  display: block;
+  width: 140px;
+  height: 100px;
+
+  img {
+    border-radius: 4px;
+    cursor: pointer;
+    transition: 100ms ease-in;
+    width: 100%;
+
+    &:hover {
+      opacity: 0.9;
+    }
+  }
+}
+
+.queued-image::before {
+  counter-increment: queue;
+  content: counter(queue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 100%;
+  color: white;
+  background-color: rgba(96, 165, 250, 0.5);
+  backdrop-filter: blur(6px);
+  font-size: 1.2rem;
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  transform: translate(-30%, -30%);
 }
