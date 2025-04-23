@@ -239,8 +239,7 @@ class GroundStation {
       }
         // must be read promise here
         clearTimeout(this._readTimer);
-        const { value, done } = result
-
+      
         // // our stream got canceled (proven by non-existing value and bytes not complete)
         return { value, done };
     }
