@@ -29,15 +29,15 @@ Before the image data is transmitted, the following header is sent to the ground
 
 ```
 +--------+----------+-------------+--------------+
-| "LORA" | DataSize | ImageWidth  | ImageHeight  |
+| "LORA" |  length  |    width    |    height    |
 +--------+----------+-------------+--------------+
-|  4 B   |   4 B    |    4 B      |     4 B      |
+|   4B   |    4B    |     4B      |      4B      |
 +--------+----------+-------------+--------------+
 ```
 
 - `"LORA"`: A fixed string identifying the transmission type.
-- `DataSize`: The total size of the image data (including headers and sequence numbers).
-- `ImageWidth` and `ImageHeight`: The dimensions of the image.
+- `length`: The total size of the image data (including headers and sequence numbers).
+- `width` and `height`: The dimensions of the image.
 
 ### Chunk Transmission
 
