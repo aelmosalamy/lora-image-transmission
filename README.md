@@ -47,9 +47,9 @@ Each chunk of the image is sent with a 2-byte sequence number. The first chunk h
 
 If any chunks are missing, the receiver will send a request for retransmission in the following format:
 
-===
+```
 MISS<N><SEQ_1><SEQ_2>...<SEQ_N>
-===
+```
 
 Where:
 - `N`: The number of missing chunks.
